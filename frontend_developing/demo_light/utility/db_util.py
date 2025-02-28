@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 
 # Add the parent directory to sys.path to access db_manager.py
-sys.path.append(str(Path(__file__).parents[3]))
+sys.path.append(str(Path(__file__).parents[2]))
 
 import pandas as pd
 from db_manager import DBManager  # This will now find the root db_manager.py
