@@ -1,0 +1,11 @@
+fuzzywuzzy
+langchain-core
+langchain-text-splitters
+pandas
+plotly
+PyMuPDF
+python-dotenv
+PyYAML
+SQLAlchemy
+streamlit
+streamlit-option-menu
