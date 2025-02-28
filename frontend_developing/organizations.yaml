@@ -1,0 +1,14 @@
+tracked_organizations:
+  university:
+    - name: "Stanford University"
+    - name: "MIT"
+    - name: "Carnegie Mellon University"
+    - name: "UC Berkeley"
+    - name: "Tsinghua University"
+    - name: "Research Institute"
+  company:
+    - name: "Google"
+    - name: "Microsoft"
+    - name: "OpenAI"
+    - name: "Meta"
+    - name: "IBM"
