@@ -1,0 +1,6 @@
+@import url('https://fonts.googleapis.com/css2?family=Oxanium:wght@200..800&display=swap');
+
+body * {
+    font-family: "Oxanium", sans-serif !important;
+    font-weight: 400;
+}
