@@ -373,7 +373,7 @@ class Organization:
             st.metric("Most Active Org", org_stats['most_active_org'])
             
 
-        st.markdown("""---""")
+        # st.markdown("""---""")
         # Main content in two columns
         # st.subheader("Research Activity")
         metric_style = """
@@ -387,26 +387,25 @@ class Organization:
         </style>
         """
         st.markdown(metric_style, unsafe_allow_html=True)
-        left_col, right_col = st.columns([1,1])
-        with left_col:
+        tab1, tab2, tab3, tab4 = st.tabs(["Collaboration Network", "Publication Trends", "Top Organizations", "Research Focus Areas"])
+        with tab1:
             # Organization collaboration network
-            st.subheader("Collaboration Network")
+            # st.subheader("Collaboration Network")
             network_fig = Organization._create_collaboration_network(org_stats['collaborations'])
             st.plotly_chart(network_fig, use_container_width=True)
-            
+        with tab2:
             # Publication trends
-            st.subheader("Publication Trends")
+            # st.subheader("Publication Trends")
             trend_fig = Organization._create_publication_trend(org_stats['yearly_pubs'])
             st.plotly_chart(trend_fig, use_container_width=True)
-        
-        with right_col:
+        with tab3:
             # Top 10 organizations
-            st.subheader("Top Organizations")
+            # st.subheader("Top Organizations")
             top_fig = Organization._create_top_orgs_chart(org_stats['top_orgs'])
             st.plotly_chart(top_fig, use_container_width=True)
-            
+        with tab4:
             # Research focus areas
-            st.subheader("Research Focus Areas")
+            # st.subheader("Research Focus Areas")
             focus_fig = Organization._create_focus_areas_chart(org_stats['focus_areas'])
             st.plotly_chart(focus_fig, use_container_width=True)
 
