@@ -60,6 +60,70 @@ class ChartDisplay:
     """Handles creation and display of various charts."""
 
     @staticmethod
+    def create_cs_schools_chart():
+        """Create a radar chart for top CS schools metrics."""
+        # Sample data - replace with real data
+        schools_data = {
+            'School': ['MIT', 'Stanford', 'Berkeley', 'CMU', 'ETH Zurich'],
+            'Research Impact': [95, 92, 90, 88, 87],
+            'Citations': [98, 95, 92, 90, 89],
+            'Industry Collab': [90, 92, 88, 94, 85],
+            'Funding': [96, 94, 92, 90, 88]
+        }
+        
+        fig = go.Figure()
+        categories = ['Research Impact', 'Citations', 'Industry Collab', 'Funding']
+        
+        for i, school in enumerate(schools_data['School']):
+            fig.add_trace(go.Scatterpolar(
+                r=[schools_data[cat][i] for cat in categories],
+                theta=categories,
+                fill='toself',
+                name=school
+            ))
+            
+        fig.update_layout(
+            polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
+            showlegend=True,
+            height=300
+        )
+        return fig
+    
+    @staticmethod
+    def create_tech_companies_chart():
+        """Create a bubble chart for tech companies metrics."""
+        # Sample data - replace with real data
+        companies_data = {
+            'Company': ['Google', 'Microsoft', 'Meta', 'Apple', 'Amazon'],
+            'Research Papers': [150, 120, 90, 70, 80],
+            'Patents': [200, 180, 120, 150, 130],
+            'Market Cap': [2000, 1800, 800, 2500, 1500]
+        }
+        
+        fig = go.Figure()
+        
+        fig.add_trace(go.Scatter(
+            x=companies_data['Research Papers'],
+            y=companies_data['Patents'],
+            mode='markers',
+            marker=dict(
+                size=[cap/50 for cap in companies_data['Market Cap']],
+                sizemode='area',
+                sizeref=2.*max(companies_data['Market Cap'])/(40.**2),
+                sizemin=4
+            ),
+            text=companies_data['Company'],
+            name='Companies'
+        ))
+        
+        fig.update_layout(
+            height=300,
+            xaxis_title="Research Papers",
+            yaxis_title="Patents"
+        )
+        return fig
+
+    @staticmethod
     def show_trend_analysis(df: pd.DataFrame, x_col: str = "Year"):
         """Display trend analysis tabs with multiple charts."""
         # Verify we have required columns and handle column case sensitivity
@@ -289,3 +353,5 @@ class FilterDisplay:
     def show_keyword_search(keywords: List[str]) -> str:
         """Display keyword search/filter."""
         return st.text_input("Search Keywords", placeholder="Type to search...")
+
+    
