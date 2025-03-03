@@ -84,6 +84,7 @@ class AffiliationRepository:
         orgs = []
         affiliations = self.session.query(Affiliation).all()
         for affiliation in affiliations:
+            candidate = None
             # Check main name
             if affiliation.name in TRACKED_ORGANIZATIONS:
                 orgs.append(affiliation.name)
