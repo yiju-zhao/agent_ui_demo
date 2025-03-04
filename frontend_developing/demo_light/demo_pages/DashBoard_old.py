@@ -78,7 +78,9 @@ class FilterHandlers:
             # Show conferences for selected year
             if selected_year:
                 st.subheader(f"Conferences in {selected_year}")
-                conferences = managers["conference"].get_conferences_by_year(selected_year)
+                conferences = managers["conference"].get_conferences_by_year(
+                    selected_year
+                )
                 FilterDisplay.show_item_filter(
                     conferences,
                     f"year_{selected_year}",
@@ -140,11 +142,11 @@ class ContentRenderers:
     def render_home_content():
         # Create two-column layout
         middle_col, right_col = st.columns([6, 4], gap="medium")
-        
+
         # Middle column with scrollable content
         with middle_col.container(height=800):
             report_col, podcast_col = st.columns(2)
-            
+
             with report_col:
                 st.subheader("Top Reports")
                 for i in range(10):
@@ -154,10 +156,12 @@ class ContentRenderers:
                             <h4>Report Title {}</h4>
                             <p>Brief description of the report content and key findings...</p>
                         </div>
-                        """.format(i+1),
-                        unsafe_allow_html=True
+                        """.format(
+                            i + 1
+                        ),
+                        unsafe_allow_html=True,
                     )
-            
+
             with podcast_col:
                 st.subheader("Top Podcasts")
                 for i in range(10):
@@ -167,10 +171,12 @@ class ContentRenderers:
                             <h4>Podcast Title {}</h4>
                             <p>Brief description of the podcast episode and topics covered...</p>
                         </div>
-                        """.format(i+1),
-                        unsafe_allow_html=True
+                        """.format(
+                            i + 1
+                        ),
+                        unsafe_allow_html=True,
                     )
-        
+
         # Right column with fixed content
         with right_col.container(height=800):
             # Happening Now Section
@@ -186,12 +192,11 @@ class ContentRenderers:
             st.subheader("Top 10 CS Schools")
             fig_schools = ChartDisplay.create_cs_schools_chart()
             st.plotly_chart(fig_schools, use_container_width=True)
-            
+
             # Top Companies Chart
             st.subheader("Top 5 Tech Companies")
             fig_companies = ChartDisplay.create_tech_companies_chart()
             st.plotly_chart(fig_companies, use_container_width=True)
-        
 
     @staticmethod
     def render_aggregate(conference: str):
@@ -221,7 +226,6 @@ class ContentRenderers:
             stats = managers["org"].get_organization_stats(organization)
             df = orgnization_stat_df(stats)
             DashboardLayout.show_orgnization_layout(df, f"Research by {organization}")
-
 
     @staticmethod
     def render_keyword(keyword: str):

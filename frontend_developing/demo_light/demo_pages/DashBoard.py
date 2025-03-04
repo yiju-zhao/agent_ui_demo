@@ -3,12 +3,8 @@ from streamlit_option_menu import option_menu
 from utility.db_util import DataManagerContext
 from utility.visualization_utli import FilterDisplay
 
-from .dashboard import (
-    Home,
-    Conference,
-    Organization,
-    Keyword
-)
+from .dashboard import Home, Conference, Organization, Keyword
+
 
 class StateCallbacks:
     """Manages state-related callback functions for different filters."""
@@ -55,7 +51,8 @@ class SessionState:
             "organization": st.session_state.get("selected_organization"),
             "keyword": st.session_state.get("selected_keyword"),
         }
-    
+
+
 class FilterHandlers:
 
     @staticmethod
@@ -64,23 +61,23 @@ class FilterHandlers:
             # Get available years and conferences
             available_years = managers["conference"].get_all_years()
             available_conferences = managers["conference"].get_all_conferences()
-            
+
             selected_year = st.selectbox(
                 "Select Year",
                 options=[None] + available_years,
-                format_func=lambda x: "All Years" if x is None else str(x)
+                format_func=lambda x: "All Years" if x is None else str(x),
             )
 
             selected_conf = st.selectbox(
                 "Select Conference",
                 options=[None] + available_conferences,
-                format_func=lambda x: "All Conferences" if x is None else str(x)
+                format_func=lambda x: "All Conferences" if x is None else str(x),
             )
-            
+
             # Update session state
             if st.session_state.get("selected_year") != selected_year:
                 st.session_state.selected_year = selected_year
-            
+
             if st.session_state.get("selected_conference") != selected_conf:
                 st.session_state.selected_conference = selected_conf
 
@@ -113,7 +110,7 @@ class FilterHandlers:
                     if st.button(kw, key=f"button_{kw.replace(' ', '_')}_kw"):
                         st.session_state.selected_keyword = kw
 
-    
+
 class DashboardUI:
     """Main dashboard UI handler."""
 
@@ -147,20 +144,20 @@ class DashboardUI:
         """Render main content based on current selections."""
         selections = SessionState.get_current_selections()
         filter_mode = st.session_state.get("filter_mode_menu")
-        
+
         if filter_mode == "Home":
             Home.render_home()
         elif filter_mode == "Conference":
             year = selections["year"]
             conf = selections["conference"]
-            
+
             if not year and not conf:
                 Conference.render_overview()
             elif year and conf:
                 Conference.render_instance(year, conf)
             elif year:
                 Conference.render_year_overview(year)
-            else: 
+            else:
                 Conference.render_conference_overview(conf)
         elif filter_mode == "Organization":
             if selections["organization"]:
@@ -172,6 +169,7 @@ class DashboardUI:
                 Keyword.render(selections["keyword"])
             else:
                 Keyword.render_overview()
+
 
 def dashboard_page():
     """Main dashboard page entry point."""
