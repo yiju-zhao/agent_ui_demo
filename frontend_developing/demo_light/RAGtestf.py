@@ -20,7 +20,7 @@ from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda
-from langchain_core.output_parsers import StrOutputParser  
+from langchain_core.output_parsers import StrOutputParser
 from typing import List, Dict, Any
 from docx.shared import Inches
 from magic_pdf.data.data_reader_writer import FileBasedDataWriter, FileBasedDataReader
@@ -38,36 +38,38 @@ def delete_all_files_in_folder(folder_path):
             if os.path.isfile(file_path):
                 os.remove(file_path)
 
+
 def rename_images_from_json(image_folder, json_file):
     """保留您原有的重命名逻辑"""
-    with open(json_file, 'r', encoding='utf-8') as file:
+    with open(json_file, "r", encoding="utf-8") as file:
         data = json.load(file)
-    
+
     figure_pattern = re.compile(r"Figure (\d+)")
-    
+
     for index, entry in enumerate(data):
-        if entry['type'] == 'image':
-            img_path = entry['img_path']
-            img_caption = entry['img_caption']
-            
+        if entry["type"] == "image":
+            img_path = entry["img_path"]
+            img_caption = entry["img_caption"]
+
             figure_match = None
             for caption in img_caption:
                 figure_match = figure_pattern.search(caption)
                 if figure_match:
                     break
-            
+
             if figure_match:
                 figure_number = figure_match.group(1)
                 new_filename = f"figure{figure_number}.jpg"
             else:
                 new_filename = f"figure{index + 1}.jpg"
-            
-            current_filename = img_path.split('/')[-1]
+
+            current_filename = img_path.split("/")[-1]
             old_filepath = os.path.join(image_folder, current_filename)
             new_filepath = os.path.join(image_folder, new_filename)
-            
+
             if os.path.exists(old_filepath):
                 os.rename(old_filepath, new_filepath)
+
 
 class EnhancedPaperAnalyzer:
     def __init__(self, pdf_path: str):
@@ -79,7 +81,6 @@ class EnhancedPaperAnalyzer:
         self.llm = ChatOpenAI(model="o1-mini")
         self.processed_chunks = []  # 新增实例变量存储分块列表
 
-
     def process_document(self, image_output_dir: str):
         """完整文档处理流程"""
         self._extract_images_and_text(image_output_dir)
@@ -88,19 +89,25 @@ class EnhancedPaperAnalyzer:
     def _extract_images_and_text(self, output_dir: str):
         """保留您的magic_pdf图片提取逻辑"""
         delete_all_files_in_folder(output_dir)
-        
+
         # 获取不含路径和后缀的文件名
-        name_without_suff = os.path.splitext(os.path.basename(self.pdf_path))[0]  # 修正文件名获取方式
-        
+        name_without_suff = os.path.splitext(os.path.basename(self.pdf_path))[
+            0
+        ]  # 修正文件名获取方式
+
         # 生成JSON文件到上级目录
-        json_path = os.path.join(os.path.dirname(output_dir), f"{name_without_suff}_content_list.json")  # 修正路径
-        
+        json_path = os.path.join(
+            os.path.dirname(output_dir), f"{name_without_suff}_content_list.json"
+        )  # 修正路径
+
         reader = FileBasedDataReader("")
         pdf_bytes = reader.read(self.pdf_path)
         ds = PymuDocDataset(pdf_bytes)
-        
+
         image_writer = FileBasedDataWriter(output_dir)
-        md_writer = FileBasedDataWriter(os.path.dirname(output_dir))  # 将JSON保存到输出目录的上级
+        md_writer = FileBasedDataWriter(
+            os.path.dirname(output_dir)
+        )  # 将JSON保存到输出目录的上级
 
         if ds.classify() == SupportedPdfParseMethod.OCR:
             infer_result = ds.apply(doc_analyze, ocr=True)
@@ -108,39 +115,43 @@ class EnhancedPaperAnalyzer:
         else:
             infer_result = ds.apply(doc_analyze, ocr=False)
             pipe_result = infer_result.pipe_txt_mode(image_writer)
-        
+
         # 将content_list.json保存到指定位置
-        pipe_result.dump_content_list(md_writer, f"{name_without_suff}_content_list.json", output_dir)
-        
+        pipe_result.dump_content_list(
+            md_writer, f"{name_without_suff}_content_list.json", output_dir
+        )
+
         # 使用绝对路径执行重命名
         rename_images_from_json(output_dir, json_path)  # 使用修正后的路径
-        
+
         # 构建图片索引
         for file in os.listdir(output_dir):
             if file.startswith("figure") and file.endswith(".jpg"):
                 figure_num = re.findall(r"figure(\d+)", file)
                 if figure_num:
-                    self.figures[f"图{figure_num[0]}"] = os.path.abspath(os.path.join(output_dir, file))
+                    self.figures[f"图{figure_num[0]}"] = os.path.abspath(
+                        os.path.join(output_dir, file)
+                    )
 
     def _process_text_with_langchain(self):
         """动态适配不同版本Document类的处理流程"""
         # 获取Document构造函数参数列表
         init_args = inspect.getfullargspec(Document.__init__).args
-        
+
         # 根据参数名选择内容字段
         content_param = "text" if "text" in init_args else "page_content"
-        
+
         loader = PyPDFLoader(self.pdf_path)
         pages = loader.load()
-        
+
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
             chunk_overlap=200,
-            separators=["\n\n", "\n", "(?<=\. )", " "]
+            separators=["\n\n", "\n", "(?<=\. )", " "],
         )
-        
+
         chunks = text_splitter.split_documents(pages)
-        
+
         processed_chunks = []
         for idx, chunk in enumerate(chunks):
             new_metadata = chunk.metadata.copy()
@@ -148,15 +159,13 @@ class EnhancedPaperAnalyzer:
             processed_chunks.append(
                 Document(page_content=chunk.page_content, metadata=new_metadata)
             )
-        print(f"Processed chunks metadata: {[doc.metadata for doc in processed_chunks]}")
-        self.vectorstore = FAISS.from_documents(
-        processed_chunks,
-        self.embeddings
-    )
+        print(
+            f"Processed chunks metadata: {[doc.metadata for doc in processed_chunks]}"
+        )
+        self.vectorstore = FAISS.from_documents(processed_chunks, self.embeddings)
         # 添加验证
         print(f"Vectorstore created with {len(processed_chunks)} documents")
         self.processed_chunks = processed_chunks
-
 
     def generate_analysis(self):
         """生成双索引分析报告"""
@@ -215,7 +224,7 @@ class EnhancedPaperAnalyzer:
         #     "该研究提出了新型神经网络架构[12]，如图1所示，在ImageNet数据集上达到92.4%准确率[15]。"
         retriever = self.vectorstore.as_retriever(search_kwargs={"k": 40})
         prompt = ChatPromptTemplate.from_template(prompt_template)
-        
+
         self.rag_chain = (
             {"context": retriever | self._format_context}
             | prompt
@@ -224,14 +233,18 @@ class EnhancedPaperAnalyzer:
             | RunnableLambda(lambda x: print(f"LLM raw output: {x}") or x)  # 添加日志
             # | RunnableLambda(self._post_process)
         )
-        return self.rag_chain.invoke("请详细分析论文HiRT: Enhancing Robotic Control with Hierarchical Robot Transformers")
+        return self.rag_chain.invoke(
+            "请详细分析论文HiRT: Enhancing Robotic Control with Hierarchical Robot Transformers"
+        )
 
     def _format_context(self, docs: List[Document]) -> str:
         """动态内容访问方法"""
         # 检测可用内容属性
         content_attr = "text" if hasattr(docs[0], "text") else "page_content"
-    # 添加日志
-        print(f"Retrieved docs metadata in _format_context: {[doc.metadata for doc in docs]}")
+        # 添加日志
+        print(
+            f"Retrieved docs metadata in _format_context: {[doc.metadata for doc in docs]}"
+        )
         return "\n\n".join(
             f"[Chunk {doc.metadata['chunk_index']}] {getattr(doc, content_attr)}"
             for doc in docs
@@ -243,11 +256,11 @@ class EnhancedPaperAnalyzer:
     #     valid_indices = set(str(i) for i in range(len(self.processed_chunks)))
     #     print(f"Valid chunk indices: {valid_indices}")
     #     print(f"Raw text before processing: {text}")
-        
+
     #     matches = re.finditer(r"\[\d+(?:,\d+)*\]", text)
     #     matched_refs = [match.group(0) for match in matches]
     #     print(f"Matched chunk references: {matched_refs}")
-        
+
     #     text = self._validate_refs(text, r"\[\d+(?:,\d+)*\]", valid_indices)
     #     valid_figures = set(self.figures.keys())
     #     return self._validate_refs(text, r"图\d+", valid_figures)
@@ -264,7 +277,7 @@ class EnhancedPaperAnalyzer:
     def save_report(self, report: str, output_path: str):
         """多格式保存"""
         ext = os.path.splitext(output_path)[1].lower()
-        
+
         if ext == ".md":
             self._save_markdown(report, output_path)
         elif ext == ".docx":
@@ -277,13 +290,14 @@ class EnhancedPaperAnalyzer:
         with open(path, "w", encoding="utf-8") as f:
             f.write("# 论文分析报告\n\n")
             f.write("## 详细分析\n")
-            
+
             # 使用正则表达式替换图片引用为图片插入代码
             figure_pattern = re.compile(r"(图\d+)")
+
             def replace_fig(match):
                 fig_key = match.group(1)
                 return self._insert_images(fig_key, is_md=True)
-            
+
             # 替换正文中的图片引用并写入
             processed_report = figure_pattern.sub(replace_fig, report)
             f.write(processed_report)
@@ -307,9 +321,10 @@ class EnhancedPaperAnalyzer:
                 return f"{{{{{fig_key}}}}}"
         return ""
 
+
 if __name__ == "__main__":
     load_dotenv()
-    
+
     # 配置参数
     PDF_PATH = "D:/G/paper4.pdf"
     OUTPUT_DIR = "D:/G/extracted_images"
@@ -317,11 +332,11 @@ if __name__ == "__main__":
 
     # 初始化分析器
     analyzer = EnhancedPaperAnalyzer(PDF_PATH)
-    
+
     # 执行完整流程
     analyzer.process_document(OUTPUT_DIR)
     report = analyzer.generate_analysis()
-    
+
     # 保存结果
     analyzer.save_report(report, os.path.join(OUTPUT_DIR, "analysis.md"))
     # analyzer.save_report(report, os.path.join(OUTPUT_DIR, "analysis.docx"))

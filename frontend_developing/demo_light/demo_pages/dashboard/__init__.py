@@ -4,8 +4,8 @@ from .organization import Organization
 from .keyword import Keyword
 
 __all__ = [
-    'Home',
-    'Conference',
-    'Organization',
-    'Keyword',
+    "Home",
+    "Conference",
+    "Organization",
+    "Keyword",
 ]

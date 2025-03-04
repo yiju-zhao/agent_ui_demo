@@ -14,6 +14,7 @@ from repositories import (
     AffiliationRepository,
 )
 
+
 class DataManagerContext:
     """Context manager for database sessions."""
 
@@ -35,9 +36,7 @@ class DataManagerContext:
             self.session.close()
 
 
-def aggregate_stat_df(
-    data: list[any], include_keywords: bool = True
-) -> pd.DataFrame:
+def aggregate_stat_df(data: list[any], include_keywords: bool = True) -> pd.DataFrame:
     """Create a DataFrame from conference statistics."""
     if not data:
         return pd.DataFrame(columns=["Year", "conference", "paper_count"])
@@ -84,9 +83,7 @@ def aggregate_stat_df(
     return df
 
 
-def conference_stat_df(
-    data: list[any], include_keywords: bool = True
-) -> pd.DataFrame:
+def conference_stat_df(data: list[any], include_keywords: bool = True) -> pd.DataFrame:
     """Create a DataFrame from conference statistics."""
     if not data:
         return pd.DataFrame(columns=["Year", "conference", "paper_count"])
@@ -133,9 +130,7 @@ def conference_stat_df(
     return df
 
 
-def orgnization_stat_df(
-    data: list[any], include_keywords: bool = True
-) -> pd.DataFrame:
+def orgnization_stat_df(data: list[any], include_keywords: bool = True) -> pd.DataFrame:
     """Create a DataFrame from conference statistics."""
     if not data:
         return pd.DataFrame(columns=["conference", "total_papers"])
@@ -144,19 +139,19 @@ def orgnization_stat_df(
     for item in data:
         try:
             conference_name, paper_count = item
-            
+
             row = {
                 "conference": conference_name,
                 "total_papers": paper_count if paper_count is not None else 0,
             }
-            
+
             df_data.append(row)
         except Exception as e:
             print(f"Error processing organization statistics row: {str(e)}")
             continue
 
     df = pd.DataFrame(df_data)
-    
+
     # Sort by total papers in descending order
     if not df.empty:
         df = df.sort_values("total_papers", ascending=False)

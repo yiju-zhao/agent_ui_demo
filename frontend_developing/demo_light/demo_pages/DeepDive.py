@@ -5,9 +5,11 @@ import base64
 script_dir = os.path.dirname(os.path.abspath(__file__))
 wiki_root_dir = os.path.dirname(os.path.dirname(script_dir))
 
+
 def deepdive_page():
     # 添加CSS来减少页面顶部的空白
-    st.markdown("""
+    st.markdown(
+        """
         <style>
         .block-container {
             padding-top: 1rem;
@@ -23,8 +25,10 @@ def deepdive_page():
             visibility: hidden;
         }
         </style>
-    """, unsafe_allow_html=True)
-    
+    """,
+        unsafe_allow_html=True,
+    )
+
     if "index" not in st.session_state:
         st.session_state["index"] = 3
     # 1) Initialize session state for the papers list if not already present
@@ -32,24 +36,26 @@ def deepdive_page():
         st.session_state["papers"] = [
             {
                 "title": "Sample Paper 1",
-                "abstract": "This is the abstract for paper 1..."
+                "abstract": "This is the abstract for paper 1...",
             },
             {
                 "title": "Sample Paper 2",
-                "abstract": "This is the abstract for paper 2..."
+                "abstract": "This is the abstract for paper 2...",
             },
             {
                 "title": "Sample Paper 3",
-                "abstract": "This is the abstract for paper 3..."
-            }
+                "abstract": "This is the abstract for paper 3...",
+            },
         ]
 
     # # 1) Initialize message list if it doesn't exist
     if "messages" not in st.session_state:
-        st.session_state["messages"] = [{"role": "assistant", "content": "你好有什么关于Paper的问题想问我吗？"},
-                                       {"role": "user", "content": "你好，我想问一下关于Paper的问题。"},
-                                       {"role": "assistant", "content": "好的，有什么问题可以问我。"}]
-        
+        st.session_state["messages"] = [
+            {"role": "assistant", "content": "你好有什么关于Paper的问题想问我吗？"},
+            {"role": "user", "content": "你好，我想问一下关于Paper的问题。"},
+            {"role": "assistant", "content": "好的，有什么问题可以问我。"},
+        ]
+
     # 2) Create three columns
     col1, col2, col3 = st.columns([1.7, 5, 4])
     with col1:
@@ -76,8 +82,8 @@ def deepdive_page():
                     outline: none !important;
                 }
                 </style>
-                """, 
-                unsafe_allow_html=True
+                """,
+                unsafe_allow_html=True,
             )
             add_source_button = st.button("Add Source")
             if add_source_button:
@@ -86,10 +92,10 @@ def deepdive_page():
                 st.session_state["papers"].append(
                     {
                         "title": "Sample Paper " + str(st.session_state["index"]),
-                        "abstract": "This is the abstract for the new source..."
+                        "abstract": "This is the abstract for the new source...",
                     }
                 )
-                
+
             # 3) Render the updated papers list
             for paper in st.session_state["papers"]:
                 paper_box = st.container()
@@ -142,7 +148,8 @@ def deepdive_page():
     # --------------------------
     with col2:
         # Add CSS for chat container
-        st.markdown("""
+        st.markdown(
+            """
             <style>
             .chat-container {
                 height: 80vh;  /* 80% of viewport height */
@@ -182,11 +189,13 @@ def deepdive_page():
                 max-height: 100px !important;
             }
             </style>
-        """, unsafe_allow_html=True)
+        """,
+            unsafe_allow_html=True,
+        )
 
         # 创建一个容器来包含整个聊天界面
         chat_container = st.container()
-        
+
         # 在容器内创建聊天历史和输入框
         with chat_container:
             chat_history = st.container(height=610)
@@ -194,7 +203,7 @@ def deepdive_page():
                 for message in st.session_state["messages"]:
                     with st.chat_message(message["role"]):
                         st.markdown(message["content"])
-            
+
             # 聊天输入区域
             prompt = st.chat_input("Ask a question about the papers...")
 
@@ -208,37 +217,37 @@ def deepdive_page():
             st.session_state.messages.append({"role": "assistant", "content": response})
             st.rerun()  # 重新渲染页面
 
-        
     # --------------------------
     # Right Column (col3)
     # --------------------------
     with col3:
 
         st.subheader("Panel Podcast")
-        
+
         # Load and display the audio file
-        audio_file_path = os.path.join(script_dir, "Don't Transform the Code, Code the Transforms.mp3")
+        audio_file_path = os.path.join(
+            script_dir, "Don't Transform the Code, Code the Transforms.mp3"
+        )
         st.caption("Paper: Don't Transform the Code, Code the Transforms")
 
         if os.path.exists(audio_file_path):
-            audio_file = open(audio_file_path, 'rb')
+            audio_file = open(audio_file_path, "rb")
             audio_bytes = audio_file.read()
-            st.audio(audio_bytes, format='audio/mp3')
+            st.audio(audio_bytes, format="audio/mp3")
         else:
             st.error(f"Audio file not found at: {audio_file_path}")
-        
 
         st.subheader("DeepDive")
         # 确保图片路径是绝对路径
         image_file_path = os.path.join(script_dir, "test_markdown_diagram.png")
-        
+
         # 检查图片是否存在
         if os.path.exists(image_file_path):
             # 读取图片并转换为base64
             with open(image_file_path, "rb") as img_file:
                 img_bytes = img_file.read()
                 encoded_img = base64.b64encode(img_bytes).decode()
-            
+
             # 使用base64编码的图片在Markdown中
             sample_markdown = f"""
             #### Methodology
@@ -280,5 +289,5 @@ def deepdive_page():
             For more details, see [the full paper](https://arxiv.org/pdf/2410.08806).
             """
         analysis_container = st.container(height=500)
-        with analysis_container:        
+        with analysis_container:
             st.markdown(sample_markdown, unsafe_allow_html=True)
