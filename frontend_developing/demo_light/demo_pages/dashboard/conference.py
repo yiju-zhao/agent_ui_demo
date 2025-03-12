@@ -454,10 +454,10 @@ class Conference:
 
         # Topic/track filter in first column
         with filter_col1:
-            selected_tracks = st.multiselect(
+            selected_track = st.selectbox(
                 "Filter by topic:",
-                options=available_topics_for_date,
-                default=available_topics_for_date
+                options=["All Topics"] + available_topics_for_date,
+                index=0
             )
 
         # Time filter in second column - with date-specific times
@@ -469,19 +469,20 @@ class Conference:
             )
 
         # Check if we should reset to show all tracks when none are selected
-        if not selected_tracks:
+        if not selected_track:
             st.warning("No topics selected. Showing all topics.")
-            selected_tracks = available_topics_for_date
+            selected_track = available_topics_for_date
 
         if selected_day_data:
             # Apply combined filtering
             filtered_sessions = selected_day_data["sessions"]
 
             # Filter by topic
-            filtered_sessions = [
-                session for session in filtered_sessions
-                if session["track"] in selected_tracks
-            ]
+            if selected_track != "All Topics":
+                filtered_sessions = [
+                    session for session in filtered_sessions
+                    if session["track"] == selected_track
+                ]
 
             # Filter by start time if a specific time is selected
             if selected_time != "All Hours":
@@ -498,8 +499,8 @@ class Conference:
 
                 # Show filter summary
                 filter_summary = []
-                if len(selected_tracks) < len(available_topics_for_date):
-                    filter_summary.append(f"**Topics:** {', '.join(selected_tracks)}")
+                if selected_track != "All Topics":
+                    filter_summary.append(f"**Topics:** {selected_track}")
                 if selected_time != "All Hours":
                     filter_summary.append(f"**Starting at:** {selected_time}")
 
