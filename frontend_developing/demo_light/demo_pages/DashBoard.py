@@ -152,7 +152,9 @@ class DashboardUI:
             conf = selections["conference"]
 
             if not year and not conf:
-                Conference.render_overview()
+                # Conference.render_overview()
+                Conference.render_conference_overview("Nvidia GTC 2025")
+
             elif year and conf:
                 Conference.render_instance(year, conf)
             elif year:
