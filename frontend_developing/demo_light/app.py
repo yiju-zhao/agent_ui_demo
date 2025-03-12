@@ -1,12 +1,21 @@
+import os
+
 import streamlit as st
 from streamlit_option_menu import option_menu
+
 from demo_pages import DataSet, DeepDive, DashBoard
+from demo_pages.dashboard.conference import Conference  # Import Conference
 
 
 def load_css():
-    with open("style.css") as css:
-        st.markdown(f"<style>{css.read()}</style>", unsafe_allow_html=True)
+    # Get the directory where the current script is located
+    script_dir = os.path.dirname(os.path.abspath(__file__))
 
+    # Create relative path to style.css from the script location
+    css_path = os.path.join(script_dir, "style.css")
+
+    with open(css_path) as css:
+        st.markdown(f"<style>{css.read()}</style>", unsafe_allow_html=True)
 
 def main():
     st.set_page_config(layout="wide")
@@ -22,6 +31,21 @@ def main():
         st.session_state["previous_menu_selection"] = None
     if "page_change_requested" not in st.session_state:
         st.session_state["page_change_requested"] = False
+    # Add session state variables for conference navigation
+    if "view_conference" not in st.session_state:
+        st.session_state.view_conference = False
+    if "selected_conference" not in st.session_state:
+        st.session_state.selected_conference = None
+
+    # If we're viewing a conference, show it and skip the main navigation
+    if st.session_state.view_conference and st.session_state.selected_conference:
+        # edit for session state
+        Conference.render_conference_overview(st.session_state.selected_conference)
+        # Add a back button
+        if st.button("← Back to Dashboard"):
+            st.session_state.view_conference = False
+            st.rerun()
+        return
 
     menu_container = st.container()
     with menu_container:
