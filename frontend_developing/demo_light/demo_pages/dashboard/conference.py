@@ -1,146 +1,127 @@
 import os
-
 import streamlit as st
 import pandas as pd
 import json
 from datetime import datetime
+from models import ConferenceInstance, Session
+from utility.db_util import (
+    DataManagerContext,
+    conference_stat_df,
+    aggregate_stat_df,
+)
+from utility.visualization_utli import DashboardLayout
+import plotly.graph_objects as go
+import circlify
 
 
 class Conference:
     """Handles rendering of conference-related content."""
 
-    # Function to sanitize description to prevent HTML rendering issues
     @staticmethod
     def sanitize_description(text):
         """Basic sanitization to escape HTML tags but preserve basic formatting"""
         if not text:
             return ""
-
-        # Replace < and > with their HTML entities to prevent rendering as HTML
-        text = text.replace("<", "<").replace(">", ">")
-
-        # Add line breaks for readability
+        text = text.replace("<", "&lt;").replace(">", "&gt;")
         text = text.replace("\n", "<br>")
-
         return text
-
-    def _transform_json_to_gtc_format(json_data):
-        transformed_data = []
-
-        for session_day in json_data:
-            # Transform date format from "2025-03-16" to "March 16, 2025"
-            date_obj = datetime.strptime(session_day["date"], "%Y-%m-%d")
-            formatted_date = date_obj.strftime("%B %d, %Y")
-
-            transformed_sessions = []
-            for session in session_day["sessions"]:
-                # Skip sessions with missing required fields if needed
-                if not session.get("badges") or not session.get("topic"):
-                    continue
-
-                # Basic fields needed for display
-                transformed_session = {
-                    "time": session.get("time", ""),
-                    "title": session.get("title", ""),
-                    "speaker": session.get("speakers", ""),
-                    "location": session.get("badges", ""),
-                    "track": session.get("topic", "").split(" - ")[0] if " - " in session.get("topic",
-                                                                                              "") else session.get(
-                        "topic", ""),
-                    "description": session.get("description", ""),
-
-                    # Additional fields for enhanced display
-                    "session_code": session.get("session code", ""),
-                    "technical_level": session.get("technical level", ""),
-                    "full_topic": session.get("topic", ""),
-                    "points": session.get("points", ""),
-                    "start_time": session.get("start_time", ""),
-                    "end_time": session.get("end_time", ""),
-                    "expert_input": session.get("expert input", "")
-                }
-                transformed_sessions.append(transformed_session)
-
-            transformed_day = {
-                "date": formatted_date,
-                "day": session_day["day"],
-                "sessions": transformed_sessions
-            }
-            transformed_data.append(transformed_day)
-
-        return transformed_data
-
+    
     @staticmethod
-    def load_conference_data():
+    def load_session_data(instance_id=None):
+        """Load session data from database"""
         try:
-            # Get the directory of the current file (conference.py)
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            # Construct the full path to the JSON file
-            json_file_path = os.path.join(current_dir,  "conference_sessions.json")
+            with DataManagerContext() as managers:
+                if instance_id:
+                    # Get sessions through conference repository
+                    sessions = managers["conference"].get_sessions_by_instance(
+                        instance_id
+                    )
+                    if not sessions:
+                        return []
 
-            with open(json_file_path, "r", encoding="utf-8") as f:
-                json_data = json.load(f)
+                    # Group sessions by date
+                    session_by_date = {}
+                    for session in sessions:
+                        date_str = session.date.strftime("%Y-%m-%d")
+                        if date_str not in session_by_date:
+                            session_by_date[date_str] = []
 
-            transformed_data = Conference._transform_json_to_gtc_format(json_data)
+                        # Find related speakers
+                        speaker_list = []
+                        speaker_companies = []
+                        
+                        for speaker in session.speaker_to_session:
+                            # Get affiliation name using affiliation_id
+                            affiliation_name = ""
+                            if speaker.affiliation_id:
+                                affiliation = managers["org"].get_affiliation_by_id(
+                                    speaker.affiliation_id
+                                )
+                                if affiliation:
+                                    affiliation_name = affiliation.name
+                                    speaker_companies.append(affiliation_name)
 
-            # Print debug info to verify data is loaded and path
-            print(f"Successfully loaded {len(transformed_data)} days of conference data from {json_file_path}")
+                            # Format speaker string
+                            if speaker.position:
+                                speaker_str = f"{speaker.name} ({speaker.position} | {affiliation_name})"
+                            else:
+                                speaker_str = f"{speaker.name} ({affiliation_name})" if affiliation_name else speaker.name
+                            
+                            speaker_list.append(speaker_str)
 
-            if not transformed_data:
-                raise ValueError("Transformed data is empty")
+                        formatted_session = {
+                            "time": f"{session.start_time.strftime('%I:%M %p')} - {session.end_time.strftime('%I:%M %p')}",
+                            "title": session.title,
+                            "speaker": ", ".join(speaker_list),
+                            "location": (
+                                f"{session.venue}, {session.room}"
+                                if session.room
+                                else session.venue
+                            ),
+                            "venue": session.venue,  # Add venue separately for filtering
+                            "speaker_companies": speaker_companies,  # Add companies for filtering
+                            "track": session.topic,
+                            "description": session.description if session.description and session.description != 'nan' else "",
+                            "session_code": session.session_code,
+                            "technical_level": session.technical_level,
+                            "full_topic": session.topic,
+                            "points": session.points if session.points and session.points != 'nan' else "",
+                        }
+                        session_by_date[date_str].append(formatted_session)
 
-            return transformed_data
+                    # Convert to list and sort chronologically
+                    session_data = [
+                        {
+                            "date": date_str,
+                            "day": datetime.strptime(date_str, "%Y-%m-%d").strftime(
+                                "%A"
+                            ),
+                            "sessions": sorted(
+                                sessions_list,
+                                key=lambda x: datetime.strptime(
+                                    x["time"].split(" - ")[0], "%I:%M %p"
+                                ),
+                            ),
+                        }
+                        for date_str, sessions_list in session_by_date.items()
+                    ]
 
+                    # Sort days chronologically
+                    session_data.sort(key=lambda x: x["date"])
+
+                    return session_data
+
+                return []
         except Exception as e:
-            print(f"Error loading conference_sessions.json: {e}")
+            st.error(f"Error loading session data: {e}")
+            return []
 
-            # Return fallback data similar to the original structure
-            return [
-                {
-                    "date": "March 16, 2025",
-                    "day": "Sunday",
-                    "sessions": [
-                        {
-                            "time": "9:00 AM - 5:00 PM",
-                            "title": "Building AI Agents With Multimodal Models",
-                            "speaker": "Mark Moyou (Sr. Data Scientist, NVIDIA)",
-                            "location": "In-Person; Full-Day Workshop",
-                            "track": "Generative AI",
-                            "description": "Just like how humans have multiple senses to perceive the world around them, more and more computer sensors are being developed to capture a wide variety of data. In the health industry, computed tomography (CT) scans..."
-                        },
-                        {
-                            "time": "9:00 AM - 5:00 PM",
-                            "title": "Build LLM Applications With Prompt Engineering",
-                            "speaker": "Mohammad Raza (Solutions Architect, NVIDIA)",
-                            "location": "In-Person; Full-Day Workshop",
-                            "track": "AI Infrastructure",
-                            "description": "With the incredible capabilities of large language models (LLMs), enterprises are eager to integrate them into their products and internal applications for a wide variety of use cases. These include text generation,..."
-                        }
-                    ]
-                },
-                {
-                    "date": "March 17, 2025",
-                    "day": "Monday",
-                    "sessions": [
-                        {
-                            "time": "12:00 AM - 12:40 AM",
-                            "title": "Application of Large Language Models in Smart Cockpits",
-                            "speaker": "Jie Gao (Sr. Director, Digital Cockpit Department; NIO Head of AI Development for Digital Cockpit, NIO)",
-                            "location": "Virtual; Talks & Panels",
-                            "track": "Robotics & Autonomous Systems",
-                            "description": "This session discusses NVIDIA technologies and their applications in advanced computing, AI, and GPU acceleration."
-                        }
-                    ]
-                }
-            ]
-
-    # Load conference data
-    gtc_sessions = None  # Initialize gtc_sessions as None initially
-
+    # ---------------------------------------------------------------------------- #
+    #                                   overview                                   #
+    # ---------------------------------------------------------------------------- #
     @staticmethod
     def render_overview():
         """Render overview of all conferences across years."""
-        # Keeping the basic conference information but removing graphs
-
         # Fake data for conference overview
         fake_data = {
             "summary_stats": {
@@ -148,6 +129,44 @@ class Conference:
                 "total_papers": 45000,
                 "total_years": 10,
                 "avg_papers_per_year": 4500,
+            },
+            "yearly_stats": {
+                "years": [2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023],
+                "paper_counts": [
+                    3000,
+                    3200,
+                    3500,
+                    3800,
+                    4000,
+                    4200,
+                    4500,
+                    4800,
+                    5000,
+                    5200,
+                ],
+                "conference_counts": [20, 20, 21, 22, 22, 23, 24, 24, 25, 25],
+            },
+            "research_focus": {
+                "Software Testing & Verification": {
+                    "description": "Focus on testing methodologies, verification techniques, and quality assurance",
+                    "conferences": ["ISSTA", "ICSE", "ASE", "ISSRE"],
+                },
+                "Program Analysis & Generation": {
+                    "description": "Research on code analysis, synthesis, and automated programming",
+                    "conferences": ["FSE", "ICSE", "ASE", "PLDI"],
+                },
+                "Software Maintenance": {
+                    "description": "Studies on software evolution, maintenance, and legacy system modernization",
+                    "conferences": ["ICSME", "ICSE", "SANER", "MSR"],
+                },
+                "Empirical Studies": {
+                    "description": "Evidence-based research and empirical methods in software engineering",
+                    "conferences": ["ESEM", "ICSE", "FSE", "MSR"],
+                },
+                "AI/ML in Software Engineering": {
+                    "description": "Applications of AI and machine learning in software development",
+                    "conferences": ["ICSE", "FSE", "ASE", "MSR"],
+                },
             },
             "top_conferences": [
                 {
@@ -165,11 +184,25 @@ class Conference:
                     "avg_citations": 23.8,
                 },
                 {
-                    "name": "Nvidia GTC 2025",
-                    "full_name": "GPU Technology Conference",
-                    "intro": "NVIDIA's premier conference for developers, researchers, and technologists exploring AI, graphics, HPC, and more.",
-                    "total_sessions": 120,
-                    "dates": "March 17-21, 2025",
+                    "name": "ASE",
+                    "full_name": "Automated Software Engineering",
+                    "intro": "Focuses on automated approaches to software development, testing, analysis, and maintenance, with emphasis on AI and machine learning applications.",
+                    "total_papers": 3800,
+                    "avg_citations": 22.1,
+                },
+                {
+                    "name": "ISSTA",
+                    "full_name": "International Symposium on Software Testing and Analysis",
+                    "intro": "The primary conference for research in software testing and analysis, covering topics from test generation to program verification.",
+                    "total_papers": 3500,
+                    "avg_citations": 21.5,
+                },
+                {
+                    "name": "ICSME",
+                    "full_name": "International Conference on Software Maintenance and Evolution",
+                    "intro": "Dedicated to advancing the state of the art in software maintenance, evolution, and reengineering of legacy systems.",
+                    "total_papers": 3200,
+                    "avg_citations": 20.2,
                 },
             ],
         }
@@ -203,519 +236,693 @@ class Conference:
                 f"{fake_data['summary_stats']['avg_papers_per_year']:,}",
             )
 
-        # Create column for conferences list
-        st.subheader("Top Conferences")
+        # Create two columns for charts
+        col_left, col_right = st.columns([1, 1])
 
-        for conf in fake_data["top_conferences"]:
-            with st.expander(f"**{conf['name']} - {conf['full_name']}**"):
-                # Determine which keys to display based on what's available in the conference data
-                has_papers = 'total_papers' in conf
-                has_citations = 'avg_citations' in conf
+        with col_left:
+            # ------------------------- Top conferences overview ------------------------- #
+            st.subheader("Top Conferences Overview")
+            for conf in fake_data["top_conferences"]:
+                with st.expander(f"**{conf['name']} - {conf['full_name']}**"):
+                    st.markdown(
+                        f"""
+                        <div style='padding: 10px;'>
+                            <div style='
+                                color: #666;
+                                margin-bottom: 15px;
+                                padding: 10px;
+                                background-color: #f8f9fa;
+                                border-radius: 5px;
+                                font-style: italic;
+                            '>{conf['intro']}</div>
+                            <div style='display: flex; justify-content: space-between; margin-bottom: 10px;'>
+                                <span style='font-weight: bold; color: #666;'>Total Papers</span>
+                                <span style='font-weight: bold; color: #1f77b4;'>{conf['total_papers']:,}</span>
+                            </div>
+                            <div style='display: flex; justify-content: space-between;'>
+                                <span style='font-weight: bold; color: #666;'>Average Citations</span>
+                                <span style='font-weight: bold; color: #1f77b4;'>{conf['avg_citations']:.1f}</span>
+                            </div>
+                        </div>
+                    """,
+                        unsafe_allow_html=True,
+                    )
 
-                # Create the appropriate display text
-                first_metric_label = "Total Papers" if has_papers else "Total Sessions"
-                first_metric_value = f"{conf['total_papers']:,}" if has_papers else f"{conf['total_sessions']}"
-
-                second_metric_label = "Average Citations" if has_citations else "Dates"
-                second_metric_value = f"{conf['avg_citations']}" if has_citations else f"{conf['dates']}"
-
-                st.markdown(
-                    f"""
-                    <div style='padding: 10px;'>
+        with col_right:
+            # ------------------------- Conference research focus ------------------------ #
+            st.subheader("Research Focus Areas")
+            for focus, details in fake_data["research_focus"].items():
+                with st.expander(f"**{focus}**"):
+                    st.markdown(
+                        f"""
                         <div style='
-                            color: #666;
-                            margin-bottom: 15px;
                             padding: 10px;
                             background-color: #f8f9fa;
                             border-radius: 5px;
-                            font-style: italic;
-                        '>{conf['intro']}</div>
-                        <div style='display: flex; justify-content: space-between; margin-bottom: 10px;'>
-                            <span style='font-weight: bold; color: #666;'>{first_metric_label}</span>
-                            <span style='font-weight: bold; color: #1f77b4;'>{first_metric_value}</span>
+                        '>
+                            <div style='color: #666; margin-bottom: 8px;'>{details['description']}</div>
+                            <div style='margin-top: 10px;'>
+                                <div style='color: #666; font-weight: bold;'>Related Conferences:</div>
+                                <div style='color: #1f77b4; padding: 5px 0;'>
+                                    {', '.join(details['conferences'])}
+                                </div>
+                            </div>
                         </div>
-                        <div style='display: flex; justify-content: space-between;'>
-                            <span style='font-weight: bold; color: #666;'>{second_metric_label}</span>
-                            <span style='font-weight: bold; color: #1f77b4;'>{second_metric_value}</span>
-                        </div>
+                    """,
+                        unsafe_allow_html=True,
+                    )
+
+        # st.subheader("Conference and Paper Trends")
+        # ---------------------------- Yearly trends chart --------------------------- #
+        yearly_fig = go.Figure()
+
+        # Add papers trend
+        yearly_fig.add_trace(
+            go.Scatter(
+                x=fake_data["yearly_stats"]["years"],
+                y=fake_data["yearly_stats"]["paper_counts"],
+                name="Papers",
+                mode="lines+markers",
+                line=dict(color="blue", width=2),
+            )
+        )
+
+        # Add conferences trend on secondary y-axis
+        yearly_fig.add_trace(
+            go.Scatter(
+                x=fake_data["yearly_stats"]["years"],
+                y=fake_data["yearly_stats"]["conference_counts"],
+                name="Conferences",
+                mode="lines+markers",
+                line=dict(color="red", width=2),
+                yaxis="y2",
+            )
+        )
+
+        yearly_fig.update_layout(
+            title="Conference and Paper Trends",
+            xaxis=dict(title="Year"),
+            yaxis=dict(title="Number of Papers"),
+            yaxis2=dict(title="Number of Conferences", overlaying="y", side="right"),
+            hovermode="x unified",
+            showlegend=True,
+            legend=dict(
+                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+            ),
+        )
+        st.plotly_chart(yearly_fig, use_container_width=True)
+
+        # Additional information or notes
+        st.markdown(
+            """
+        > **Note:** This overview represents conference data across all tracked years. 
+        Select a specific year from the sidebar for detailed annual statistics.
+        """
+        )
+
+    # ---------------------------------------------------------------------------- #
+    #                                  conference                                  #
+    # ---------------------------------------------------------------------------- #
+    @staticmethod
+    def render_conference_overview(conference: str):
+        """Render overview of specific conference with session data and filtering options."""
+        """Render overview of all conferences."""
+        # Fake data for conference trends
+        fake_data = {
+            "years": [2019, 2020, 2021, 2022, 2023],
+            "keywords_trend": {
+                "Large Language Models": [0, 5, 15, 45, 80],
+                "Neural Networks": [50, 45, 40, 35, 30],
+                "Transformer": [10, 20, 35, 50, 60],
+                "Reinforcement Learning": [30, 35, 25, 20, 15],
+                "AutoML": [40, 35, 30, 20, 10],
+                "Prompt Engineering": [0, 0, 10, 30, 50],
+                "Few-shot Learning": [5, 15, 25, 35, 40],
+            },
+            "companies_trend": {
+                "Google Research": [20, 25, 30, 35, 40],
+                "Microsoft Research": [18, 22, 25, 30, 35],
+                "Meta AI": [0, 15, 20, 25, 30],
+                "DeepMind": [15, 18, 20, 25, 28],
+                "OpenAI": [0, 5, 15, 25, 35],
+                "IBM Research": [25, 22, 20, 18, 15],
+                "NVIDIA Research": [10, 15, 18, 20, 25],
+            },
+            "academic_trend": {
+                "Stanford": [30, 35, 38, 40, 45],
+                "MIT": [28, 32, 35, 38, 42],
+                "Berkeley": [25, 28, 32, 35, 38],
+                "CMU": [22, 25, 28, 32, 35],
+                "Tsinghua": [20, 25, 30, 35, 40],
+                "ETH Zurich": [18, 20, 25, 28, 30],
+                "Oxford": [15, 18, 22, 25, 28],
+            },
+            "paper_counts": [350, 380, 420, 450, 500],
+        }
+
+        st.header(f"{conference} Overview")
+
+        # Create two rows with two columns each
+        row1_col1, row1_col2 = st.columns(2)
+        row2_col1, row2_col2 = st.columns(2)
+
+        common_layout = dict(
+            height=550,
+            margin=dict(l=50, r=50, t=50, b=20),  # Adjust margins
+            plot_bgcolor="white",
+            legend=dict(
+                orientation="h",  # Horizontal legend
+                yanchor="bottom",  # Place at bottom
+                y=-0.4,  # Move below plot
+                xanchor="center",  # Center horizontally
+                x=0.5,
+                bgcolor="rgba(255, 255, 255, 0.8)",  # Semi-transparent background
+                bordercolor="rgba(0, 0, 0, 0.1)",  # Light border
+                borderwidth=1,
+            ),
+            xaxis=dict(showgrid=True, gridcolor="rgba(0, 0, 0, 0.1)"),
+            yaxis=dict(showgrid=True, gridcolor="rgba(0, 0, 0, 0.1)"),
+        )
+
+        with row1_col1:
+            keywords_fig = go.Figure()
+            for keyword, counts in fake_data["keywords_trend"].items():
+                keywords_fig.add_trace(
+                    go.Scatter(
+                        x=fake_data["years"],
+                        y=counts,
+                        name=keyword,
+                        mode="lines+markers",
+                    )
+                )
+            keywords_fig.update_layout(
+                title=dict(text="Top Keywords Trend", y=0.95),
+                xaxis_title="Year",
+                yaxis_title="Number of Papers",
+                **common_layout,
+            )
+            st.plotly_chart(keywords_fig, use_container_width=True)
+
+        # ------------------------------ Companies Trend ----------------------------- #
+        with row1_col2:
+            companies_fig = go.Figure()
+            for company, counts in fake_data["companies_trend"].items():
+                companies_fig.add_trace(
+                    go.Scatter(
+                        x=fake_data["years"],
+                        y=counts,
+                        name=company,
+                        mode="lines+markers",
+                    )
+                )
+            companies_fig.update_layout(
+                title=dict(text="Top Companies Contribution Trend", y=0.95),
+                xaxis_title="Year",
+                yaxis_title="Number of Papers",
+                **common_layout,
+            )
+            st.plotly_chart(companies_fig, use_container_width=True)
+
+        # ------------------------ Academic Institutions Trend ----------------------- #
+        with row2_col1:
+            academic_fig = go.Figure()
+            for inst, counts in fake_data["academic_trend"].items():
+                academic_fig.add_trace(
+                    go.Scatter(
+                        x=fake_data["years"], y=counts, name=inst, mode="lines+markers"
+                    )
+                )
+            academic_fig.update_layout(
+                title=dict(text="Top Academic Institutions Trend", y=0.95),
+                xaxis_title="Year",
+                yaxis_title="Number of Papers",
+                **common_layout,
+            )
+            st.plotly_chart(academic_fig, use_container_width=True)
+
+        # ----------------------------- Paper Count Trend ---------------------------- #
+        with row2_col2:
+            papers_fig = go.Figure()
+            papers_fig.add_trace(
+                go.Bar(
+                    x=fake_data["years"],
+                    y=fake_data["paper_counts"],
+                    marker_color="rgb(55, 83, 109)",
+                )
+            )
+            papers_fig.update_layout(
+                title=dict(text="Total Papers Published", y=0.95),
+                xaxis_title="Year",
+                yaxis_title="Number of Papers",
+                height=400,
+                margin=dict(l=50, r=50, t=50, b=50),
+                plot_bgcolor="white",
+                showlegend=False,
+                xaxis=dict(showgrid=True, gridcolor="rgba(0, 0, 0, 0.1)"),
+                yaxis=dict(showgrid=True, gridcolor="rgba(0, 0, 0, 0.1)"),
+            )
+            st.plotly_chart(papers_fig, use_container_width=True)
+
+        # Add spacing between rows
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Additional conference information
+        st.markdown(
+            f"""
+        > **Note:** This overview shows trends for {conference} over the past 5 years. 
+        """
+        )
+
+    # ---------------------------------------------------------------------------- #
+    #                                     year                                     #
+    # ---------------------------------------------------------------------------- #
+    @staticmethod
+    def render_year_overview(year: int):
+        # Fake data
+        fake_data = {
+            "trending_keywords": [
+                {"keyword": "Large Language Models", "count": 150, "trend": "↑"},
+                {"keyword": "Prompt Engineering", "count": 120, "trend": "↑"},
+                {"keyword": "Neural Architecture", "count": 100, "trend": "→"},
+                {"keyword": "Transformer Models", "count": 95, "trend": "↑"},
+                {"keyword": "Federated Learning", "count": 85, "trend": "↑"},
+                {"keyword": "Edge Computing", "count": 80, "trend": "→"},
+                {"keyword": "Zero-shot Learning", "count": 75, "trend": "↑"},
+                {"keyword": "AutoML", "count": 70, "trend": "↓"},
+                {"keyword": "Knowledge Graphs", "count": 65, "trend": "→"},
+                {"keyword": "Quantum ML", "count": 60, "trend": "↑"},
+            ],
+            "academic_institutes": [
+                {"name": "Stanford University", "papers": 120},
+                {"name": "MIT", "papers": 110},
+                {"name": "UC Berkeley", "papers": 95},
+                {"name": "Carnegie Mellon", "papers": 90},
+                {"name": "ETH Zurich", "papers": 85},
+                {"name": "Tsinghua University", "papers": 80},
+                {"name": "University of Oxford", "papers": 75},
+                {"name": "University of Cambridge", "papers": 70},
+                {"name": "University of Toronto", "papers": 65},
+                {"name": "TU Munich", "papers": 60},
+                {"name": "Others", "papers": 150},
+            ],
+            "companies": [
+                {"name": "Google Research", "papers": 100},
+                {"name": "Microsoft Research", "papers": 90},
+                {"name": "Meta AI", "papers": 85},
+                {"name": "DeepMind", "papers": 80},
+                {"name": "IBM Research", "papers": 70},
+                {"name": "OpenAI", "papers": 65},
+                {"name": "NVIDIA Research", "papers": 60},
+                {"name": "Amazon Science", "papers": 55},
+                {"name": "Anthropic", "papers": 50},
+                {"name": "Huawei Research", "papers": 45},
+                {"name": "Others", "papers": 200},
+            ],
+            "conferences": [
+                {"name": "ICML 2024", "date": "Jul 21-27", "papers": 1200},
+                {"name": "NeurIPS 2024", "date": "Dec 8-14", "papers": 1150},
+                {"name": "ICLR 2024", "date": "May 7-11", "papers": 1100},
+                {"name": "AAAI 2024", "date": "Feb 20-27", "papers": 1000},
+                {"name": "ACL 2024", "date": "Aug 12-17", "papers": 950},
+                {"name": "CVPR 2024", "date": "Jun 17-21", "papers": 900},
+                {"name": "IJCAI 2024", "date": "Aug 3-9", "papers": 850},
+                {"name": "ECCV 2024", "date": "Sep 29-Oct 4", "papers": 800},
+            ],
+        }
+
+        st.header("Conference Years Overview")
+
+        # Create two columns for the layout
+        left_col, right_col = st.columns([2, 1])
+
+        with left_col:
+            # Trending Keywords (Top Left)
+            st.subheader("Trending Research Topics")
+            for keyword in fake_data["trending_keywords"]:
+                trend_color = {"↑": "green", "↓": "red", "→": "gray"}[keyword["trend"]]
+                st.markdown(
+                    f"""
+                    <div style='
+                        display: flex;
+                        justify-content: space-between;
+                        padding: 5px;
+                        border-bottom: 1px solid #eee;
+                    '>
+                        <span>{keyword['keyword']}</span>
+                        <span style='color: {trend_color}'>{keyword['count']} {keyword['trend']}</span>
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
 
-    @staticmethod
-    def render_conference_overview(conference: str):
-        """Render overview of specific conference with session data and filtering options."""
-        # Load the conference data if it hasn't been loaded yet
-        if Conference.gtc_sessions is None:
-            Conference.gtc_sessions = Conference.load_conference_data()
+            # Companies (Bottom Right)
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.subheader("Top Industry Contributors")
 
-        st.header(f"{conference} Conference Details")
-
-        # Conference information
-        st.markdown(
-            """
-            <div style='
-                padding: 15px;
-                margin-bottom: 20px;
-                background-color: #f8f9fa;
-                border-radius: 5px;
-                border-left: 5px solid #1f77b4;
-            '>
-                <h3 style='margin-top: 0; color: #1f77b4;'>Nvidia GTC 2025</h3>
-                <p style='font-style: italic;'>NVIDIA's premier conference for developers, researchers, and technologists exploring AI, graphics, HPC, and more.</p>
-                <p><strong>Date:</strong> March 17-21, 2025</p>
-                <p><strong>Location:</strong> San Jose Convention Center, San Jose, CA</p>
-                <p><strong>Total Sessions:</strong> 120+</p>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-        # Get available dates from the mock data
-        available_dates = [day_data["date"] for day_data in Conference.gtc_sessions]
-        days_of_week = [day_data["day"] for day_data in Conference.gtc_sessions]
-
-        # Combine dates with days for display
-        date_labels = [f"{day} ({date.split(', ')[0]})" for day, date in zip(days_of_week, available_dates)]
-
-        # Initialize session state for selected date if not exists
-        if "selected_date_index" not in st.session_state:
-            st.session_state.selected_date_index = 0
-
-        # Session state for tracking selected session
-        if "selected_session" not in st.session_state:
-            st.session_state.selected_session = None
-
-        # Get the currently selected date
-        selected_date = available_dates[st.session_state.selected_date_index]
-
-        # Create browser-tab style date navigation
-        st.markdown(
-            """
-            <style>
-            /* Date tab styles */
-            .date-tab-container {
-                display: flex;
-                overflow-x: auto;
-                margin-bottom: 20px;
-                border-bottom: 1px solid #ddd;
-            }
-            .date-tab {
-                padding: 8px 16px;
-                margin-right: 4px;
-                border-top-left-radius: 8px;
-                border-top-right-radius: 8px;
-                cursor: pointer;
-                text-align: center;
-                user-select: none;
-                transition: background-color 0.3s;
-            }
-            .date-tab.active {
-                background-color: #1f77b4;
-                color: white;
-                border: 1px solid #1f77b4;
-                border-bottom: none;
-                position: relative;
-                top: 1px;
-                font-weight: bold;
-            }
-            .date-tab:not(.active) {
-                background-color: #f1f1f1;
-                border: 1px solid #ddd;
-                border-bottom: none;
-            }
-            .date-tab:hover:not(.active) {
-                background-color: #e6e6e6;
-            }
-
-            /* Session list styles */
-            .session-list-item {
-                padding: 10px 15px;
-                margin: 5px 0;
-                border: 1px solid #ddd;
-                border-radius: 5px;
-                cursor: pointer;
-                transition: all 0.2s ease;
-            }
-            .session-list-item:hover {
-                background-color: #f5f5f5;
-                transform: translateX(5px);
-            }
-            .session-list-item.selected {
-                background-color: #e6f7ff;
-                border-color: #1f77b4;
-                border-left: 4px solid #1f77b4;
-            }
-
-            /* Topic tag styles */
-            .topic-tag {
-                display: inline-block;
-                color: white;
-                font-weight: bold;
-                font-size: 0.8em;
-                padding: 3px 10px;
-                border-radius: 12px;
-                margin-bottom: 8px;
-            }
-
-            /* Session detail styles */
-            .session-detail-container {
-                padding: 0;
-                height: 0;
-                overflow: hidden;
-                transition: all 0.3s ease-out;
-                opacity: 0;
-            }
-            .session-detail-container.active {
-                padding: 15px;
-                height: auto;
-                opacity: 1;
-                border: 1px solid #ddd;
-                border-radius: 5px;
-                background-color: white;
-                border-left: 4px solid #1f77b4;
-                margin-bottom: 15px;
-                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            }
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
-
-        # Create tabs container with columns (one for each date)
-        tabs_cols = st.columns(len(available_dates))
-
-        # Update the selected date when a tab is clicked
-        for i, (col, date, label) in enumerate(zip(tabs_cols, available_dates, date_labels)):
-            with col:
-                # Create a button styled as a tab
-                if st.button(
-                        label,
-                        key=f"date_tab_{i}",
-                        use_container_width=True,
-                        type="primary" if i == st.session_state.selected_date_index else "secondary"
-                ):
-                    st.session_state.selected_date_index = i
-                    # Reset selected session when changing dates
-                    st.session_state.selected_session = None
-                    st.rerun()
-
-        # Find the sessions for the selected date
-        selected_day_data = next(
-            (day for day in Conference.gtc_sessions if day["date"] == selected_date),
-            None
-        )
-
-        # Helper function to sort times chronologically
-        def time_key(time_str):
-            """Convert time string to minutes for sorting."""
-            # Handle both formats: "9:00 AM" and "9:00 AM - 10:30 AM"
-            if " - " in time_str:
-                time_str = time_str.split(" - ")[0]
-
-            # Extract hours and minutes
-            time_parts = time_str.split(":")
-            hour = int(time_parts[0])
-            minute_parts = time_parts[1].split(" ")
-            minute = int(minute_parts[0])
-            am_pm = minute_parts[1].upper()
-
-            # Convert to 24-hour time for easier sorting
-            if am_pm == "PM" and hour != 12:
-                hour += 12
-            elif am_pm == "AM" and hour == 12:
-                hour = 0
-
-            # Return minutes since midnight for sorting
-            return hour * 60 + minute
-
-        # Extract times and topics only for the selected date
-        available_times_for_date = []
-        available_topics_for_date = []
-
-        if selected_day_data:
-            for session in selected_day_data["sessions"]:
-                # Extract the starting time from the time range
-                start_time = session["time"].split(" - ")[0]
-                available_times_for_date.append(start_time)
-                available_topics_for_date.append(session["track"])
-
-            # Remove duplicates and sort
-            # Sort times chronologically using the time_key function
-            available_times_for_date = sorted(list(set(available_times_for_date)), key=time_key)
-            available_topics_for_date = sorted(list(set(available_topics_for_date)))
-
-        # Create filters section
-        st.subheader("Filter Sessions")
-
-        # Create two columns for remaining filters
-        filter_col1, filter_col2 = st.columns(2)
-
-        # Topic/track filter in first column
-        with filter_col1:
-            selected_track = st.selectbox(
-                "Filter by topic:",
-                options=["All Topics"] + available_topics_for_date,
-                index=0
+            companies_fig = go.Figure(
+                data=[
+                    go.Pie(
+                        labels=[company["name"] for company in fake_data["companies"]],
+                        values=[
+                            company["papers"] for company in fake_data["companies"]
+                        ],
+                        hole=0.3,
+                        textinfo="label+percent",
+                        textposition="outside",
+                        pull=[
+                            0.1 if company["name"] == "Others" else 0
+                            for company in fake_data["companies"]
+                        ],
+                    )
+                ]
             )
 
-        # Time filter in second column - with date-specific times
-        with filter_col2:
-            selected_time = st.selectbox(
-                "Filter by start time:",
-                options=["All Hours"] + available_times_for_date,
-                index=0  # Default to "All Hours"
+            companies_fig.update_layout(
+                showlegend=False, height=500, margin=dict(t=0, b=0, l=0, r=0)
             )
 
-        # Check if we should reset to show all tracks when none are selected
-        if not selected_track:
-            st.warning("No topics selected. Showing all topics.")
-            selected_track = available_topics_for_date
+            st.plotly_chart(companies_fig, use_container_width=True)
 
-        if selected_day_data:
-            # Apply combined filtering
-            filtered_sessions = selected_day_data["sessions"]
+            # Academic Institutes (Bottom Left)
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.subheader("Top Academic Contributors")
 
-            # Filter by topic
-            if selected_track != "All Topics":
-                filtered_sessions = [
-                    session for session in filtered_sessions
-                    if session["track"] == selected_track
+            academic_fig = go.Figure(
+                data=[
+                    go.Pie(
+                        labels=[
+                            inst["name"] for inst in fake_data["academic_institutes"]
+                        ],
+                        values=[
+                            inst["papers"] for inst in fake_data["academic_institutes"]
+                        ],
+                        hole=0.3,
+                        textinfo="label+percent",
+                        textposition="outside",
+                        pull=[
+                            0.1 if inst["name"] == "Others" else 0
+                            for inst in fake_data["academic_institutes"]
+                        ],
+                    )
                 ]
+            )
 
-            # Filter by start time if a specific time is selected
-            if selected_time != "All Hours":
-                filtered_sessions = [
-                    session for session in filtered_sessions
-                    if session["time"].startswith(selected_time)
-                ]
+            academic_fig.update_layout(
+                title="Academic Institutions",
+                showlegend=False,
+                height=500,
+                margin=dict(t=0, b=0, l=0, r=0),
+            )
 
-            if not filtered_sessions:
-                st.info(f"No sessions found for the selected filters on {selected_day_data['date']}.")
-            else:
-                st.markdown(f"### Sessions for {selected_day_data['date']} ({selected_day_data['day']})")
-                st.markdown(f"Showing {len(filtered_sessions)} session(s) matching your filters")
+            st.plotly_chart(academic_fig, use_container_width=True)
 
-                # Show filter summary
-                filter_summary = []
-                if selected_track != "All Topics":
-                    filter_summary.append(f"**Topics:** {selected_track}")
-                if selected_time != "All Hours":
-                    filter_summary.append(f"**Starting at:** {selected_time}")
+        with right_col:
+            # Conferences (Top Right)
+            st.subheader(f"Conference in {year}")
+            from datetime import datetime
 
-                if filter_summary:
-                    st.markdown(" | ".join(filter_summary))
+            sorted_conferences = sorted(
+                fake_data["conferences"],
+                key=lambda x: datetime.strptime(x["date"].split("-")[0], "%b %d"),
+                reverse=True,
+            )
 
-                # Dynamic color generation for topics - will work with any number of topics
-                def get_topic_color(topic):
-                    """Generate a color based on the topic name using HSL color space for better distribution."""
-                    # Use a hash of the topic name to generate a hue value
-                    topic_hash = hash(topic) % 360  # Hue values are 0-359
+            for conf in sorted_conferences:
+                st.markdown(
+                    f"""
+                    <div style='
+                        padding: 10px;
+                        margin: 5px 0;
+                        border: 1px solid #ddd;
+                        border-radius: 5px;
+                    '>
+                        <div style='
+                            display: flex;
+                            justify-content: space-between;
+                        '>
+                            <strong>{conf['name']}</strong>
+                            <span>{conf['papers']} papers</span>
+                        </div>
+                        <div style='color: gray; font-size: 0.9em;'>{conf['date']}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
-                    # Fixed saturation and lightness for consistent, readable colors
-                    saturation = 80  # Higher value = more vibrant colors
-                    lightness = 45  # Slightly darker for better contrast
-
-                    # Convert HSL to a CSS color string
-                    return f"hsl({topic_hash}, {saturation}%, {lightness}%)"
-
-                # Create two-column layout for sessions
-                main_col1, main_col2 = st.columns([1, 1.5])
-
-                with main_col1:
-                    st.markdown("### Session List")
-
-                    # Display each session as a clickable item
-                    for i, session in enumerate(filtered_sessions):
-                        # Determine if this session is selected
-                        is_selected = st.session_state.selected_session == i
-
-                        # Get topic color
-                        topic_color = get_topic_color(session['track'])
-
-                        # Create session item container
-                        session_container = st.container()
-                        with session_container:
-                            # First show the topic tag ABOVE the session title
-                            st.markdown(
-                                f"""
-                                <div>
-                                    <span class="topic-tag" style="background-color: {topic_color};">
-                                        {session['track']}
-                                    </span>
-                                </div>
-                                """,
-                                unsafe_allow_html=True
-                            )
-
-                            # Then show the session button
-                            if st.button(
-                                    f"{session['time']} - {session['title']}",
-                                    key=f"session_btn_{i}",
-                                    use_container_width=True,
-                                    type="primary" if is_selected else "secondary",
-                                    help="Click to view details"
-                            ):
-                                # Toggle selection
-                                if st.session_state.selected_session == i:
-                                    st.session_state.selected_session = None
-                                else:
-                                    st.session_state.selected_session = i
-                                st.rerun()
-
-                            # Add a little spacing between sessions
-                            st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-
-                with main_col2:
-                    st.markdown("### Session Details")
-
-                    # Display details of selected session with animation
-                    if st.session_state.selected_session is not None and st.session_state.selected_session < len(
-                            filtered_sessions):
-                        selected_session = filtered_sessions[st.session_state.selected_session]
-                        topic_color = get_topic_color(selected_session['track'])
-
-                        # Create animated container for details with all fields
-                        # Prepare additional details sections
-                        additional_details = ""
-
-                        # Session Code (if available)
-                        if 'session_code' in selected_session and selected_session['session_code']:
-                            additional_details += f"""
-                            <div style="margin-bottom: 10px;">
-                                <strong>Session Code:</strong> {selected_session['session_code']}
-                            </div>
-                            """
-
-                        # Technical Level (if available)
-                        if 'technical_level' in selected_session and selected_session['technical_level']:
-                            additional_details += f"""
-                            <div style="margin-bottom: 10px;">
-                                <strong>Technical Level:</strong> {selected_session['technical_level']}
-                            </div>
-                            """
-
-                        # Full Topic (if available and different from track)
-                        if 'full_topic' in selected_session and selected_session['full_topic'] and selected_session[
-                            'full_topic'] != selected_session['track']:
-                            additional_details += f"""
-                            <div style="margin-bottom: 10px;">
-                                <strong>Full Topic:</strong> {selected_session['full_topic']}
-                            </div>
-                            """
-
-                        # Key Points (if available)
-                        points_html = ""
-                        if 'points' in selected_session and selected_session['points']:
-                            points = selected_session['points'].split('\n')
-                            points_html = """
-                            <div style="margin-top: 15px; margin-bottom: 15px;">
-                                <strong>Key Points:</strong>
-                                <ul style="margin-top: 5px;">
-                            """
-                            for point in points:
-                                if point.strip():  # Skip empty lines
-                                    points_html += f"<li>{point.strip()}</li>"
-
-                            points_html += """
-                                </ul>
-                            </div>
-                            """
-
-                        # Expert Input (if available)
-                        expert_html = ""
-                        if 'expert_input' in selected_session and selected_session['expert_input']:
-                            expert_html = f"""
-                            <div style="margin-top: 15px; margin-bottom: 15px;">
-                                <strong>Expert Input:</strong>
-                                <div style="
-                                    margin-top: 5px;
-                                    padding: 10px;
-                                    background-color: #f0f7ff;
-                                    border-radius: 5px;
-                                    border-left: 3px solid #1f77b4;
-                                ">
-                                    {selected_session['expert_input']}
-                                </div>
-                            </div>
-                            """
-                        # Description (if available) - Refactored for consistency
-                        description_html = ""
-                        if 'description' in selected_session and selected_session['description']:
-                            description_html = f"""
-                            <div style="margin-top: 15px; margin-bottom: 15px;">
-                                <strong>Description:</strong>
-                                <div style="
-                                    margin-top: 5px;
-                                    padding: 10px;
-                                    background-color: #f8f9fa; /* Lighter gray */
-                                    border-radius: 5px;
-                                    border-left: 3px solid #1f77b4;
-                                    font-style: italic; /* Optional: Italicize the description */
-                                ">
-                                    {Conference.sanitize_description(selected_session['description'])}
-                                </div>
-                            </div>
-                            """
-
-                        # Create animated container for details with all fields in a single HTML block
-                        st.markdown(
-                            f"""
-                            <div class="session-detail-container active">
-                                <div>
-                                    <span class="topic-tag" style="background-color: {topic_color};">
-                                        {selected_session['track']}
-                                    </span>
-                                </div>
-                                <h3>{selected_session['title']}</h3>
-                                <div style="margin-bottom: 10px;">
-                                    <strong>Time:</strong> {selected_session['time']}
-                                </div>
-                                <div style="margin-bottom: 10px;">
-                                    <strong>Speaker:</strong> {selected_session['speaker']}
-                                </div>
-                                <div style="margin-bottom: 10px;">
-                                    <strong>Location:</strong> {selected_session['location']}
-                                </div>
-
-                                {additional_details}
-                                {description_html}
-                                {points_html}
-                                {expert_html}
-
-                            </div>
-                            """,
-                            unsafe_allow_html=True
-                        )
-                    else:
-                        # Show a placeholder when no session is selected
-                        st.markdown(
-                            """
-                            <div style="
-                                text-align: center;
-                                padding: 30px;
-                                background-color: #f8f9fa;
-                                color: #666;
-                                border-radius: 5px;
-                                border: 1px dashed #ddd;
-                            ">
-                                <p>Select a session from the list to view details</p>
-                            </div>
-                            """,
-                            unsafe_allow_html=True
-                        )
-
-        else:
-            st.warning("No sessions found for the selected date.")
-
-    @staticmethod
-    def render_year_overview(year: int):
-        """Simplified year overview - redirects to conference overview."""
-        st.info(f"Please select a specific conference to view its details for {year}.")
-        Conference.render_overview()
-
+    # ---------------------------------------------------------------------------- #
+    #                                   instance                                   #
+    # ---------------------------------------------------------------------------- #
     @staticmethod
     def render_instance(year: int, conference: str):
-        """Simplified instance view - redirects to conference overview."""
-        Conference.render_conference_overview(conference)
+        # Ensure we preserve the current view
+        st.session_state.filter_mode_menu = "Conference"
+        st.session_state.selected_year = year
+        st.session_state.selected_conference = conference
+        # st.rerun()
+        
+        try:
+            with DataManagerContext() as managers:
+                # Get conference instance through repository
+                instance = managers["conference"].get_instance_by_year_and_name(
+                    year, conference
+                )
+
+                if not instance:
+                    st.error(f"No conference instance found for {conference} {year}")
+                    return
+
+                # Load session data
+                session_data = Conference.load_session_data(instance.instance_id)
+                if not session_data:
+                    st.warning("No sessions found for this conference instance.")
+                    return
+
+                # st.header(f"{conference} Conference Details")
+
+                # Conference information
+                st.markdown(
+                    f"""
+                    <div style='padding: 15px; margin-bottom: 20px; background-color: #f8f9fa; 
+                        border-radius: 5px; border-left: 5px solid #1f77b4;'>
+                        <h3 style='margin-top: 0; color: #1f77b4;'>{instance.conference_name} {instance.year}</h3>
+                        <p><strong>Date:</strong> {instance.start_date.strftime('%B %d')} - 
+                        {instance.end_date.strftime('%B %d, %Y')}</p>
+                        <p><strong>Location:</strong> {instance.location or "Location not specified"}</p>
+                        {f'<p><strong>Website:</strong> <a href="{instance.website}" target="_blank">{instance.website}</a></p>' 
+                        if instance.website else ''}
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                # Get available dates from the session data
+                available_dates = [day_data["date"] for day_data in session_data]
+                days_of_week = [day_data["day"] for day_data in session_data]
+
+                # Combine dates with days for display using consistent date format
+                date_labels = [
+                    f"{day} ({datetime.strptime(date, '%Y-%m-%d').strftime('%B %d')})"
+                    for day, date in zip(days_of_week, available_dates)
+                ]
+
+                # Initialize session state for selected date if not exists
+                if "selected_date_index" not in st.session_state:
+                    st.session_state.selected_date_index = 0
+
+                # Session state for tracking selected session
+                if "selected_session" not in st.session_state:
+                    st.session_state.selected_session = None
+
+                # Create tabs for each date
+                tabs = st.tabs(date_labels)
+
+                for tab_idx, (tab, day_data) in enumerate(zip(tabs, session_data)):
+                    with tab:
+                        # Get available topics and times for this day
+                        available_topics = sorted(list(set(
+                            session["track"] for session in day_data["sessions"]
+                        )))
+                        
+                        available_times = sorted(list(set(
+                            session["time"].split(" - ")[0] for session in day_data["sessions"]
+                        )), key=lambda x: datetime.strptime(x, "%I:%M %p"))
+                        
+                        available_venues = sorted(list(set(
+                            session["venue"] for session in day_data["sessions"]
+                        )))
+                        
+                        available_companies = sorted(list(set(
+                            company for session in day_data["sessions"]
+                            for company in session["speaker_companies"]
+                        )))
+
+                        # Create filters
+                        st.subheader("Filter Sessions")
+                        filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
+                        
+                        with filter_col1:
+                            selected_track = st.selectbox(
+                                "Filter by topic:",
+                                options=["All Topics"] + available_topics,
+                                key=f"topic_filter_{tab_idx}"
+                            )
+                        
+                        with filter_col2:
+                            selected_time = st.selectbox(
+                                "Filter by start time:",
+                                options=["All Hours"] + available_times,
+                                key=f"time_filter_{tab_idx}"
+                            )
+                        
+                        with filter_col3:
+                            selected_venue = st.selectbox(
+                                "Filter by venue:",
+                                options=["All Venues"] + available_venues,
+                                key=f"venue_filter_{tab_idx}"
+                            )
+                        
+                        with filter_col4:
+                            selected_company = st.selectbox(
+                                "Filter by company:",
+                                options=["All Companies"] + available_companies,
+                                key=f"company_filter_{tab_idx}"
+                            )
+
+                        # Apply filters
+                        filtered_sessions = day_data["sessions"]
+
+                        if selected_track != "All Topics":
+                            filtered_sessions = [
+                                session for session in filtered_sessions
+                                if session["track"] == selected_track
+                            ]
+
+                        if selected_time != "All Hours":
+                            filtered_sessions = [
+                                session for session in filtered_sessions
+                                if session["time"].startswith(selected_time)
+                            ]
+                            
+                        if selected_venue != "All Venues":
+                            filtered_sessions = [
+                                session for session in filtered_sessions
+                                if session["venue"] == selected_venue
+                            ]
+                            
+                        if selected_company != "All Companies":
+                            filtered_sessions = [
+                                session for session in filtered_sessions
+                                if selected_company in session["speaker_companies"]
+                            ]
+
+                        # Create two columns for session list and details
+                        list_col, details_col = st.columns([1, 1.5])
+
+                        
+                        with list_col:
+                            st.markdown("### Sessions")
+                            if not filtered_sessions:
+                                st.info(f"No sessions found for the selected filters.")
+                            else:
+                                st.markdown(f"Showing {len(filtered_sessions)} session(s)")
+                                
+                                # Display each session as a clickable item
+                                for i, session in enumerate(filtered_sessions):
+                                    is_selected = st.session_state.selected_session == i
+                                    
+                                    # Show time first
+                                    st.markdown(
+                                        f"""
+                                        <div style='color: #666666; font-size: 0.9em; margin-bottom: 2px;'>
+                                            {session['time']}
+                                        </div>
+                                        """,
+                                        unsafe_allow_html=True
+                                    )
+
+                                    # Session button with only title, left-justified
+                                    if st.button(
+                                        session['title'],
+                                        key=f"session_btn_{tab_idx}_{i}",
+                                        use_container_width=True,
+                                        type="primary" if is_selected else "secondary"
+                                    ):
+                                        # Update selected session while preserving navigation state
+                                        st.session_state.selected_session = i if not is_selected else None
+                                        st.rerun()
+
+                        with details_col:
+                            st.markdown("### Session Details")
+                            if st.session_state.selected_session is not None and st.session_state.selected_session < len(filtered_sessions):
+                                selected_session = filtered_sessions[st.session_state.selected_session]
+                                
+                                # Title first
+                                st.markdown(f"#### {selected_session['title']}")
+                                
+                                # Create two columns for the first row
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    st.markdown(f"**Time:** {selected_session['time']}")
+                                    st.markdown(f"**Track:** {selected_session['track']}")
+                                with col2:
+                                    st.markdown(f"**Location:** {selected_session['location']}")
+                                    if selected_session.get('session_code'):
+                                        st.markdown(f"**Session Code:** {selected_session['session_code']}")
+
+                                # Technical level
+                                if selected_session.get('technical_level'):
+                                    st.markdown(f"**Technical Level:** {selected_session['technical_level']}")
+
+                                # Speakers
+                                st.markdown(f"**Speaker(s):** {selected_session['speaker']}")
+
+
+                                # In the display section:
+                                # Description
+                                if selected_session.get('description') and selected_session['description'] != 'nan':
+                                    description = selected_session['description']
+                                    if isinstance(description, str) and description.strip():
+                                        st.markdown('<div class="description-expander">', unsafe_allow_html=True)
+                                        with st.expander("📝 Description"):
+                                            st.markdown(description)
+                                        st.markdown('</div>', unsafe_allow_html=True)
+                                        
+                                # Key Points
+                                if selected_session.get('points'):
+                                    points = selected_session['points']
+                                    if isinstance(points, str) and points.strip() and points.lower() != 'nan':
+                                        points_list = [p.strip() for p in points.split('\n') if p.strip() and p.lower() != 'nan']
+                                        if points_list:
+                                            st.markdown('<div class="key-points-expander">', unsafe_allow_html=True)
+                                            with st.expander("🎯 Key Points"):
+                                                for point in points_list:
+                                                    st.markdown(point)
+                                            st.markdown('</div>', unsafe_allow_html=True)
+
+                                # Expert Opinion
+                                if selected_session.get('expert_opinion') and selected_session['expert_opinion'] != 'nan':
+                                    expert_opinion = selected_session['expert_opinion']
+                                    if isinstance(expert_opinion, str) and expert_opinion.strip():
+                                        st.markdown('<div class="expert-opinion-expander">', unsafe_allow_html=True)
+                                        with st.expander("👨‍🏫 专家观点"):
+                                            opinion_list = [p.strip() for p in expert_opinion.split('\n') if p.strip()]
+                                            for opinion in opinion_list:
+                                                st.markdown(opinion)
+                                        st.markdown('</div>', unsafe_allow_html=True)
+
+                                # AI Interpretation
+                                if selected_session.get('ai_interpretation') and selected_session['ai_interpretation'] != 'nan':
+                                    ai_interpretation = selected_session['ai_interpretation']
+                                    if isinstance(ai_interpretation, str) and ai_interpretation.strip():
+                                        st.markdown('<div class="ai-interpretation-expander">', unsafe_allow_html=True)
+                                        with st.expander("🤖 AI解读"):
+                                            interpretation_list = [p.strip() for p in ai_interpretation.split('\n') if p.strip()]
+                                            for interpretation in interpretation_list:
+                                                st.markdown(interpretation)
+                                        st.markdown('</div>', unsafe_allow_html=True)
+
+        except Exception as e:
+            st.error(f"Error rendering conference instance: {e}")
+            import traceback
+
+            st.error(traceback.format_exc())

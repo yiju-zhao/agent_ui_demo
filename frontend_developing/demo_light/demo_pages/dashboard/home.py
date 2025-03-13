@@ -7,33 +7,18 @@ class Home:
     """Handles rendering of home page content."""
 
     @staticmethod
+    def view_conference_details(conf_name, year):
+        """Handle navigation to specific conference instance."""
+        st.session_state.selected_year = year
+        st.session_state.selected_conference = conf_name
+        # Use a navigation target instead of directly modifying the widget key
+        st.session_state.nav_target = "Conference"
+        st.rerun()
+
+    @staticmethod
     def render_home():
-        # Check if we're viewing a conference
-        if "view_conference" not in st.session_state:
-            st.session_state.view_conference = False
         if "selected_conference" not in st.session_state:
             st.session_state.selected_conference = None
-
-        # If we're viewing a conference, show it and return
-        if st.session_state.view_conference and st.session_state.selected_conference:
-            from conference import Conference  # Import here to avoid circular imports
-            Conference.render_conference_overview(st.session_state.selected_conference)
-
-            # Add a back button
-            if st.button("← Back to Home"):
-                st.session_state.view_conference = False
-                st.rerun()
-            return
-
-        # Function to handle conference selection
-        def view_conference_details(conf_name):
-            st.session_state.selected_conference = conf_name
-            st.session_state.view_conference = True
-            st.rerun()
-
-        # Initialize existing session state variables
-        if "show_report_details" not in st.session_state:
-            st.session_state.show_report_details = None
 
         # Fake data for reports and podcasts
         fake_reports = [
@@ -84,7 +69,7 @@ class Home:
             {"type": "Panel Discussion", "title": "Software Testing in the AI Era"},
         ]
 
-        middle_col, right_col = st.columns([7, 3], gap="small")
+        middle_col, right_col = st.columns([6, 3], gap="small")
 
         with middle_col:
             report_col, podcast_col = st.columns([5, 4])
@@ -171,7 +156,8 @@ class Home:
             # Fake data for conferences timeline
             conference_timeline = [
                 {
-                    "name": "Nvidia GTC 2025",
+                    "name": "GTC",
+                    "year": 2025,
                     "date": "March 17-21, 2025",
                     "location": "San Jose, CA",
                     "status": "Happening Now",  # or None if not current
@@ -181,46 +167,31 @@ class Home:
             for idx, conf in enumerate(conference_timeline):
                 status_html = ""
                 if conf["status"] == "Happening Now":
-                    status_html = """
-                        <span style='
-                            background-color: #2fb344;
-                            color: white;
-                            padding: 2px 8px;
-                            border-radius: 12px;
-                            font-size: 0.8em;
-                            margin-left: 8px;
-                        '>Happening Now</span>
-                    """
+                    status_html = (
+                        "<div style='margin-bottom: 4px;'>"
+                        "<span style='background-color: #2fb344; color: white; padding: 2px 8px; "
+                        "border-radius: 12px; font-size: 0.8em;'>Happening Now</span>"
+                        "</div>"
+                    )
 
                 # Create a container for each conference
                 conf_container = st.container()
                 with conf_container:
                     # Display conference info with styled cursor to indicate clickability
                     st.markdown(
-                        f"""
-                        <div style='
-                            padding: 8px;
-                            margin: 5px 0;
-                            border: 1px solid #ddd;
-                            border-radius: 5px;
-                            background-color: #f8f9fa;
-                            cursor: pointer;
-                        '>
+                        f"""<div style='padding: 8px; margin: 5px 0; border: 1px solid #ddd; border-radius: 5px; background-color: #f8f9fa; cursor: pointer;'>
+                            {status_html}
                             <div style='display: flex; justify-content: space-between;'>
-                                <span style='font-weight: bold; color: #1f77b4;'>{conf['name']}{status_html}</span>
+                                <span style='font-weight: bold; color: #1f77b4;'>{conf['name']} {str(conf['year'])}</span>
                                 <span style='color: #666;'>{conf['date']}</span>
                             </div>
                             <div style='color: #888; font-size: 0.9em;'>{conf['location']}</div>
-                        </div>
-                        """,
+                        </div>""",
                         unsafe_allow_html=True,
                     )
-
                     # Add a button to view conference details
-                    col1, col2 = st.columns([3, 1])
-                    with col2:
-                        if st.button("View Sessions", key=f"conf_btn_{idx}", use_container_width=True):
-                            view_conference_details(conf['name'])
+                    if st.button("View Details", key=f"conf_button_{idx}"):
+                        Home.view_conference_details(conf['name'], conf['year'])
 
             # Hot Research Topics section
             st.subheader("Hot Research Topics")

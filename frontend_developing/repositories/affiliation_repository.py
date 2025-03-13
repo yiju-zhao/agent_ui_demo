@@ -4,9 +4,13 @@ from models import Affiliation
 from sqlalchemy import or_
 from config import TRACKED_ORGANIZATIONS
 
+
 class AffiliationRepository:
     def __init__(self, session):
         self.session = session
+
+    def get_affiliation_by_id(self, affiliation_id: int) -> Affiliation:
+        return self.session.query(Affiliation).filter_by(affiliation_id=affiliation_id).first()
 
     def _clean_name(self, name: str) -> str:
         """Clean name by removing special characters and standardizing format"""
@@ -89,11 +93,15 @@ class AffiliationRepository:
             if affiliation.name in TRACKED_ORGANIZATIONS:
                 orgs.append(affiliation.name)
                 continue
-                
+
             # Parse and check aliases
             if affiliation.aliases:
                 # Remove curly braces and split by comma
-                aliases = [alias.strip('"') for alias in affiliation.aliases if isinstance(alias, str)]
+                aliases = [
+                    alias.strip('"')
+                    for alias in affiliation.aliases
+                    if isinstance(alias, str)
+                ]
                 for alias in aliases:
                     if alias in TRACKED_ORGANIZATIONS:
                         candidate = alias

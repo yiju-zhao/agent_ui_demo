@@ -306,6 +306,19 @@ class DashboardLayout:
             st.subheader("Top Papers")
             DataFrameDisplay.show_paper_table(papers_df.nlargest(5, "Citations"))
 
+    @staticmethod
+    def get_topic_color(topic):
+        """Generate a color based on the topic name using HSL color space for better distribution."""
+        # Use a hash of the topic name to generate a hue value
+        topic_hash = hash(topic) % 360  # Hue values are 0-359
+
+        # Fixed saturation and lightness for consistent, readable colors
+        saturation = 80  # Higher value = more vibrant colors
+        lightness = 45  # Slightly darker for better contrast
+
+        # Convert HSL to a CSS color string
+        return f"hsl({topic_hash}, {saturation}%, {lightness}%)"
+
 
 class FilterDisplay:
     """Handles display of filter components."""

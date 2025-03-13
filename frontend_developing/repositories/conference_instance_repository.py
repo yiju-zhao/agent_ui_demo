@@ -1,6 +1,8 @@
-from models import Conference, ConferenceInstance, Paper
+from models import Conference, ConferenceInstance, Paper, Session
 from typing import Optional
 from sqlalchemy import func
+from sqlalchemy.orm import joinedload
+from typing import List, Optional
 
 
 class ConferenceInstanceRepository:
@@ -120,3 +122,32 @@ class ConferenceInstanceRepository:
             .group_by(Conference.name)
             .all()
         )
+
+    def get_sessions_by_instance(self, instance_id: int) -> List[Session]:
+        """Get all sessions for a conference instance."""
+        try:
+            sessions = (
+                self.session.query(Session)
+                .filter_by(instance_id=instance_id)
+                .options(joinedload(Session.speaker_to_session))  # Eager load speakers
+                .all()
+            )
+            return sessions
+        except Exception as e:
+            print(f"Error getting sessions: {e}")
+            return []
+
+    def get_instance_by_year_and_name(
+        self, year: int, conference_name: str
+    ) -> Optional[ConferenceInstance]:
+        """Get conference instance by year and conference name."""
+        try:
+            instance = (
+                self.session.query(ConferenceInstance)
+                .filter_by(year=year, conference_name=conference_name)
+                .first()
+            )
+            return instance
+        except Exception as e:
+            print(f"Error getting conference instance: {e}")
+            return None
