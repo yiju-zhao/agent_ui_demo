@@ -6,9 +6,8 @@ import re
 from openpyxl.styles import PatternFill
 
 # 常量定义
-OPENROUTER_API_KEY = "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" #换成相应的api key
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1" #换成相应的base url
-MODEL_NAME = "google/gemini-2.0-flash-lite-preview-02-05:free" #换成gpt-4o
+OPENROUTER_API_KEY = "" #换成相应的api key
+MODEL_NAME = "gpt-4o" 
 EXCEL_INPUT_FILE = "conference_data.xlsx"
 EXCEL_OUTPUT_FILE = "merged_conference_data.xlsx"
 REQUIRED_COLUMNS = ["主题", "关键人物或公司"]
@@ -66,11 +65,11 @@ def read_conference_data(file_path=EXCEL_INPUT_FILE):
         return None, None
 
 
-def create_openai_client(api_key=OPENROUTER_API_KEY, base_url=OPENROUTER_BASE_URL):
+def create_openai_client(api_key=OPENROUTER_API_KEY):
     """
     创建OpenAI客户端
     """
-    return OpenAI(api_key=api_key, base_url=base_url)
+    return OpenAI(api_key=api_key)
 
 
 def generate_model_response(client, system_prompt, user_prompt, temperature=0, model=MODEL_NAME):
