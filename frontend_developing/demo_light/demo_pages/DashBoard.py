@@ -62,24 +62,43 @@ class FilterHandlers:
             available_years = managers["conference"].get_all_years()
             available_conferences = managers["conference"].get_all_conferences()
 
+            current_year = st.session_state.get("selected_year")
+            current_conf = st.session_state.get("selected_conference")
+
+            # Calculate the correct index for year selectbox
+            year_index = 0  # default to first option (None)
+            if current_year in available_years:
+                year_index = available_years.index(current_year) + 1  # +1 because None is first
+
             selected_year = st.selectbox(
                 "Select Year",
                 options=[None] + available_years,
                 format_func=lambda x: "All Years" if x is None else str(x),
+                index=year_index,
+                key="year_selectbox"  # Add a unique key
             )
+
+            # Calculate the correct index for conference selectbox
+            conf_index = 0  # default to first option (None)
+            if current_conf in available_conferences:
+                conf_index = available_conferences.index(current_conf) + 1  # +1 because None is first
 
             selected_conf = st.selectbox(
                 "Select Conference",
                 options=[None] + available_conferences,
                 format_func=lambda x: "All Conferences" if x is None else str(x),
+                index=conf_index,
+                key="conf_selectbox"  # Add a unique key
             )
 
-            # Update session state
-            if st.session_state.get("selected_year") != selected_year:
+            # Update session state and force rerun if changed
+            if selected_year != current_year:
                 st.session_state.selected_year = selected_year
+                st.rerun()  # Force rerun on change
 
-            if st.session_state.get("selected_conference") != selected_conf:
+            if selected_conf != current_conf:
                 st.session_state.selected_conference = selected_conf
+                st.rerun()  # Force rerun on change
 
     @staticmethod
     def handle_organization_filter():
@@ -116,27 +135,52 @@ class DashboardUI:
 
     @staticmethod
     def render_sidebar():
+        # Check if we need to switch to conference view
+        if "nav_target" in st.session_state:
+            # Force a reset of the option_menu widget by using a different key
+            if "option_menu_key" in st.session_state:
+                st.session_state.option_menu_key += 1
+            else:
+                st.session_state.option_menu_key = 1
+                
+            st.session_state.filter_mode_menu = st.session_state.nav_target
+            del st.session_state.nav_target  # Clean up after use
+
         if "filter_mode_menu" not in st.session_state:
             st.session_state.filter_mode_menu = "Home"
+            
+        if "option_menu_key" not in st.session_state:
+            st.session_state.option_menu_key = 0
 
         with st.sidebar:
             st.title("Conference Navigator")
-            filter_mode = option_menu(
+            # Store the current mode before creating the widget
+            current_mode = st.session_state.filter_mode_menu
+            
+            selected_mode = option_menu(
                 menu_title=None,
                 options=["Home", "Conference", "Organization", "Keyword"],
                 icons=["house", "calendar-event", "building", "tag"],
                 menu_icon="cast",
-                default_index=0,
-                key="filter_mode_menu",
+                default_index=["Home", "Conference", "Organization", "Keyword"].index(current_mode),
+                key=f"filter_mode_menu_{st.session_state.option_menu_key}"
             )
+            
+            # If the selected mode changed, update the session state
+            if selected_mode != current_mode:
+                st.session_state.filter_mode_menu = selected_mode
+                # Clear selections when switching to home
+                if selected_mode == "Home":
+                    SessionState.clear_selections()
+                st.rerun()
 
-            if filter_mode == "Home":
+            if selected_mode == "Home":
                 SessionState.clear_selections()
-            elif filter_mode == "Conference":
+            elif selected_mode == "Conference":
                 FilterHandlers.handle_conference_filter()
-            elif filter_mode == "Organization":
+            elif selected_mode == "Organization":
                 FilterHandlers.handle_organization_filter()
-            elif filter_mode == "Keyword":
+            elif selected_mode == "Keyword":
                 FilterHandlers.handle_keyword_filter()
 
     @staticmethod
@@ -152,9 +196,7 @@ class DashboardUI:
             conf = selections["conference"]
 
             if not year and not conf:
-                # Conference.render_overview()
-                Conference.render_conference_overview("Nvidia GTC 2025")
-
+                Conference.render_overview()
             elif year and conf:
                 Conference.render_instance(year, conf)
             elif year:

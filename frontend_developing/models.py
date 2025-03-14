@@ -10,6 +10,8 @@ from sqlalchemy import (
     ForeignKey,
     UniqueConstraint,
     Index,
+    Time,
+    JSON
 )
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.dialects.postgresql import ARRAY
@@ -62,6 +64,7 @@ class ConferenceInstance(Base):
     )
     # 定义与 `Paper` 表的关系
     paper_to_instance = relationship("Paper", back_populates="instance_to_paper")
+    session_to_instance = relationship("Session", back_populates="instance_to_session")
 
     def __repr__(self):
         return (
@@ -270,3 +273,85 @@ class PaperKeyword(Base):
     keyword_id = Column(
         Integer, ForeignKey("keyword.keyword_id", ondelete="CASCADE"), primary_key=True
     )  # 关联关键字
+
+# Session
+class Session(Base):
+    __tablename__ = "session"
+
+    session_id = Column(Integer, primary_key=True, autoincrement=True)
+    instance_id = Column(
+        Integer, ForeignKey("conference_instance.instance_id"), nullable=False
+    )
+    title = Column(String(255), nullable=False)
+    session_code = Column(String(50))
+    topic = Column(String(255))  # Robotics - Robotics Simulation
+    viewing_experience = Column(String(50))  # Virtual, In-Person, etc.
+    session_type = Column(String(100))  # Talks & Panels, Workshop, etc.
+    points = Column(Text)  # Bullet points about the session
+    date = Column(Date, nullable=False)
+    start_time = Column(Time, nullable=False)
+    end_time = Column(Time, nullable=False)
+    venue = Column(String(100))  # APAC
+    room = Column(String(100))  # Simulive Room 3
+    speakers = Column(JSON)  # Store the full speaker information as JSON
+    description = Column(Text)
+    technical_level = Column(String(100))  # Technical - Advanced
+
+    # 定义与 ConferenceInstance 的关系
+    instance_to_session = relationship(
+        "ConferenceInstance", back_populates="session_to_instance"
+    )
+    # 定义与 authoer 的关系
+    speaker_to_session = relationship(
+        "Speaker", secondary="session_speaker", back_populates="session_to_speaker"
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_session_code", "session_code"),
+        Index("idx_session_date", "date"),
+        Index("idx_session_title", "title"),
+        Index("idx_session_topic", "topic"),
+    )
+
+    def __repr__(self):
+        return f"<Session(id={self.session_id}, code={self.session_code}, title={self.title})>"
+
+
+# Speaker information table
+class Speaker(Base):
+    __tablename__ = "speaker"
+
+    speaker_id = Column(
+        Integer, primary_key=True, autoincrement=True
+    )  # Primary key, auto-increment
+    affiliation_id = Column(Integer, ForeignKey("affiliation.affiliation_id"))
+    name = Column(String(100), nullable=False)  # Speaker name, cannot be empty
+    position = Column(
+        String(255)
+    )  # Position at the affiliation (e.g., "Sr. Data Scientist", "Professor")
+
+    # Relationships
+    session_to_speaker = relationship(
+        "Session", secondary="session_speaker", back_populates="speaker_to_session"
+    )
+
+    __table_args__ = (Index("idx_speaker_name", "name"),)
+
+    def __repr__(self):
+        return f"<Speaker(id={self.speaker_id}, name={self.name})>"
+
+
+# Session-Speaker relationship table
+class SessionSpeaker(Base):
+    __tablename__ = "session_speaker"
+
+    session_id = Column(
+        Integer, ForeignKey("session.session_id", ondelete="CASCADE"), primary_key=True
+    )  # Link to session
+    speaker_id = Column(
+        Integer, ForeignKey("speaker.speaker_id", ondelete="CASCADE"), primary_key=True
+    )  # Link to speaker
+
+    def __repr__(self):
+        return f"<SessionSpeaker(session_id={self.session_id}, speaker_id={self.speaker_id}, role={self.role})>"
