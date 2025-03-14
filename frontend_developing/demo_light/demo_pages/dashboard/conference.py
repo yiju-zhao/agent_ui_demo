@@ -678,8 +678,23 @@ class Conference:
         st.session_state.filter_mode_menu = "Conference"
         st.session_state.selected_year = year
         st.session_state.selected_conference = conference
-        # st.rerun()
         
+        # Initialize session states if not exists
+        if "active_tab" not in st.session_state:
+            st.session_state.active_tab = 0
+        if "selected_session" not in st.session_state:
+            st.session_state.selected_session = None
+        if "filtered_sessions" not in st.session_state:
+            st.session_state.filtered_sessions = None
+            
+        # Callback functions for state updates
+        def on_date_select(idx):
+            st.session_state.active_tab = idx
+            st.session_state.selected_session = None
+            
+        def on_session_select(idx):
+            st.session_state.selected_session = idx
+
         try:
             with DataManagerContext() as managers:
                 # Get conference instance through repository
@@ -697,9 +712,7 @@ class Conference:
                     st.warning("No sessions found for this conference instance.")
                     return
 
-                # st.header(f"{conference} Conference Details")
-
-                # Conference information
+                # Conference information header
                 st.markdown(
                     f"""
                     <div style='padding: 15px; margin-bottom: 20px; background-color: #f8f9fa; 
@@ -715,214 +728,188 @@ class Conference:
                     unsafe_allow_html=True,
                 )
 
-                # Get available dates from the session data
+                # Get available dates
                 available_dates = [day_data["date"] for day_data in session_data]
                 days_of_week = [day_data["day"] for day_data in session_data]
-
-                # Combine dates with days for display using consistent date format
                 date_labels = [
                     f"{day} ({datetime.strptime(date, '%Y-%m-%d').strftime('%B %d')})"
                     for day, date in zip(days_of_week, available_dates)
                 ]
 
-                # Initialize session state for selected date if not exists
-                if "selected_date_index" not in st.session_state:
-                    st.session_state.selected_date_index = 0
+                # Date selection buttons with callbacks
+                st.markdown("### Select Date")
+                date_cols = st.columns(len(date_labels))
+                for i, (label, col) in enumerate(zip(date_labels, date_cols)):
+                    with col:
+                        st.button(
+                            label,
+                            key=f"date_btn_{i}",
+                            on_click=on_date_select,
+                            args=(i,),
+                            use_container_width=True,
+                            type="primary" if st.session_state.active_tab == i else "secondary"
+                        )
 
-                # Session state for tracking selected session
-                if "selected_session" not in st.session_state:
-                    st.session_state.selected_session = None
+                # Get current day's data
+                tab_idx = st.session_state.active_tab
+                day_data = session_data[tab_idx]
 
-                # Create tabs for each date
-                tabs = st.tabs(date_labels)
-
-                for tab_idx, (tab, day_data) in enumerate(zip(tabs, session_data)):
-                    with tab:
-                        # Get available topics and times for this day
-                        available_topics = sorted(list(set(
-                            session["track"] for session in day_data["sessions"]
+                # Cache and get filter options
+                filter_key = f"filter_options_{tab_idx}"
+                if filter_key not in st.session_state:
+                    st.session_state[filter_key] = {
+                        "topics": sorted(list(set(s["track"] for s in day_data["sessions"]))),
+                        "times": sorted(list(set(
+                            s["time"].split(" - ")[0] for s in day_data["sessions"]
+                        )), key=lambda x: datetime.strptime(x, "%I:%M %p")),
+                        "venues": sorted(list(set(s["venue"] for s in day_data["sessions"]))),
+                        "companies": sorted(list(set(
+                            company for s in day_data["sessions"]
+                            for company in s["speaker_companies"]
                         )))
-                        
-                        available_times = sorted(list(set(
-                            session["time"].split(" - ")[0] for session in day_data["sessions"]
-                        )), key=lambda x: datetime.strptime(x, "%I:%M %p"))
-                        
-                        available_venues = sorted(list(set(
-                            session["venue"] for session in day_data["sessions"]
-                        )))
-                        
-                        available_companies = sorted(list(set(
-                            company for session in day_data["sessions"]
-                            for company in session["speaker_companies"]
-                        )))
+                    }
 
-                        # Create filters
-                        st.subheader("Filter Sessions")
-                        filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
-                        
-                        with filter_col1:
-                            selected_track = st.selectbox(
-                                "Filter by topic:",
-                                options=["All Topics"] + available_topics,
-                                key=f"topic_filter_{tab_idx}"
-                            )
-                        
-                        with filter_col2:
-                            selected_time = st.selectbox(
-                                "Filter by start time:",
-                                options=["All Hours"] + available_times,
-                                key=f"time_filter_{tab_idx}"
-                            )
-                        
-                        with filter_col3:
-                            selected_venue = st.selectbox(
-                                "Filter by venue:",
-                                options=["All Venues"] + available_venues,
-                                key=f"venue_filter_{tab_idx}"
-                            )
-                        
-                        with filter_col4:
-                            selected_company = st.selectbox(
-                                "Filter by company:",
-                                options=["All Companies"] + available_companies,
-                                key=f"company_filter_{tab_idx}"
-                            )
+                # Filter UI
+                st.subheader("Filter Sessions")
+                filter_cols = st.columns(4)
+                
+                with filter_cols[0]:
+                    selected_track = st.selectbox(
+                        "Filter by topic:",
+                        options=["All Topics"] + st.session_state[filter_key]["topics"],
+                        key=f"topic_filter_{tab_idx}"
+                    )
+                
+                with filter_cols[1]:
+                    selected_time = st.selectbox(
+                        "Filter by start time:",
+                        options=["All Hours"] + st.session_state[filter_key]["times"],
+                        key=f"time_filter_{tab_idx}"
+                    )
+                
+                with filter_cols[2]:
+                    selected_venue = st.selectbox(
+                        "Filter by venue:",
+                        options=["All Venues"] + st.session_state[filter_key]["venues"],
+                        key=f"venue_filter_{tab_idx}"
+                    )
+                
+                with filter_cols[3]:
+                    selected_company = st.selectbox(
+                        "Filter by company:",
+                        options=["All Companies"] + st.session_state[filter_key]["companies"],
+                        key=f"company_filter_{tab_idx}"
+                    )
 
-                        # Apply filters
-                        filtered_sessions = day_data["sessions"]
+                # Apply filters
+                filtered_sessions = day_data["sessions"]
+                if selected_track != "All Topics":
+                    filtered_sessions = [s for s in filtered_sessions if s["track"] == selected_track]
+                if selected_time != "All Hours":
+                    filtered_sessions = [s for s in filtered_sessions if s["time"].startswith(selected_time)]
+                if selected_venue != "All Venues":
+                    filtered_sessions = [s for s in filtered_sessions if s["venue"] == selected_venue]
+                if selected_company != "All Companies":
+                    filtered_sessions = [s for s in filtered_sessions if selected_company in s["speaker_companies"]]
 
-                        if selected_track != "All Topics":
-                            filtered_sessions = [
-                                session for session in filtered_sessions
-                                if session["track"] == selected_track
-                            ]
-
-                        if selected_time != "All Hours":
-                            filtered_sessions = [
-                                session for session in filtered_sessions
-                                if session["time"].startswith(selected_time)
-                            ]
+                # Session list and details
+                list_col, details_col = st.columns([1, 1.5])
+                
+                with list_col:
+                    st.markdown("### Sessions")
+                    if not filtered_sessions:
+                        st.info("No sessions found for the selected filters.")
+                    else:
+                        st.markdown(f"Showing {len(filtered_sessions)} session(s)")
+                        
+                        for i, session in enumerate(filtered_sessions):
+                            st.markdown(
+                                f"""<div style='color: #666666; font-size: 0.9em; 
+                                margin-bottom: 2px;'>{session['time']}</div>""",
+                                unsafe_allow_html=True
+                            )
                             
-                        if selected_venue != "All Venues":
-                            filtered_sessions = [
-                                session for session in filtered_sessions
-                                if session["venue"] == selected_venue
-                            ]
-                            
-                        if selected_company != "All Companies":
-                            filtered_sessions = [
-                                session for session in filtered_sessions
-                                if selected_company in session["speaker_companies"]
-                            ]
+                            st.button(
+                                session['title'],
+                                key=f"session_btn_{tab_idx}_{i}",
+                                on_click=on_session_select,
+                                args=(i,),
+                                use_container_width=True,
+                                type="primary" if st.session_state.selected_session == i else "secondary"
+                            )
 
-                        # Create two columns for session list and details
-                        list_col, details_col = st.columns([1, 1.5])
-
+                # Rest of the details column code remains the same
+                with details_col:
+                    st.markdown("### Session Details")
+                    if st.session_state.selected_session is not None and st.session_state.selected_session < len(filtered_sessions):
+                        selected_session = filtered_sessions[st.session_state.selected_session]
                         
-                        with list_col:
-                            st.markdown("### Sessions")
-                            if not filtered_sessions:
-                                st.info(f"No sessions found for the selected filters.")
-                            else:
-                                st.markdown(f"Showing {len(filtered_sessions)} session(s)")
+                        # Title first
+                        st.markdown(f"#### {selected_session['title']}")
+                        
+                        # Create two columns for the first row
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.markdown(f"**Time:** {selected_session['time']}")
+                            st.markdown(f"**Track:** {selected_session['track']}")
+                        with col2:
+                            st.markdown(f"**Location:** {selected_session['location']}")
+                            if selected_session.get('session_code'):
+                                st.markdown(f"**Session Code:** {selected_session['session_code']}")
+
+                        # Technical level
+                        if selected_session.get('technical_level'):
+                            st.markdown(f"**Technical Level:** {selected_session['technical_level']}")
+
+                        # Speakers
+                        st.markdown(f"**Speaker(s):** {selected_session['speaker']}")
+
+
+                        # In the display section:
+                        # Description
+                        if selected_session.get('description') and selected_session['description'] != 'nan':
+                            description = selected_session['description']
+                            if isinstance(description, str) and description.strip():
+                                st.markdown('<div class="description-expander">', unsafe_allow_html=True)
+                                with st.expander("📝 Description"):
+                                    st.markdown(description)
+                                st.markdown('</div>', unsafe_allow_html=True)
                                 
-                                # Display each session as a clickable item
-                                for i, session in enumerate(filtered_sessions):
-                                    is_selected = st.session_state.selected_session == i
-                                    
-                                    # Show time first
-                                    st.markdown(
-                                        f"""
-                                        <div style='color: #666666; font-size: 0.9em; margin-bottom: 2px;'>
-                                            {session['time']}
-                                        </div>
-                                        """,
-                                        unsafe_allow_html=True
-                                    )
+                        # Key Points
+                        if selected_session.get('points'):
+                            points = selected_session['points']
+                            if isinstance(points, str) and points.strip() and points.lower() != 'nan':
+                                points_list = [p.strip() for p in points.split('\n') if p.strip() and p.lower() != 'nan']
+                                if points_list:
+                                    st.markdown('<div class="key-points-expander">', unsafe_allow_html=True)
+                                    with st.expander("🎯 Key Points"):
+                                        for point in points_list:
+                                            st.markdown(point)
+                                    st.markdown('</div>', unsafe_allow_html=True)
 
-                                    # Session button with only title, left-justified
-                                    if st.button(
-                                        session['title'],
-                                        key=f"session_btn_{tab_idx}_{i}",
-                                        use_container_width=True,
-                                        type="primary" if is_selected else "secondary"
-                                    ):
-                                        # Update selected session while preserving navigation state
-                                        st.session_state.selected_session = i if not is_selected else None
-                                        st.rerun()
+                        # Expert Opinion
+                        if selected_session.get('expert_opinion') and selected_session['expert_opinion'] != 'nan':
+                            expert_opinion = selected_session['expert_opinion']
+                            if isinstance(expert_opinion, str) and expert_opinion.strip():
+                                st.markdown('<div class="expert-opinion-expander">', unsafe_allow_html=True)
+                                with st.expander("👨‍🏫 专家观点"):
+                                    opinion_list = [p.strip() for p in expert_opinion.split('\n') if p.strip()]
+                                    for opinion in opinion_list:
+                                        st.markdown(opinion)
+                                st.markdown('</div>', unsafe_allow_html=True)
 
-                        with details_col:
-                            st.markdown("### Session Details")
-                            if st.session_state.selected_session is not None and st.session_state.selected_session < len(filtered_sessions):
-                                selected_session = filtered_sessions[st.session_state.selected_session]
-                                
-                                # Title first
-                                st.markdown(f"#### {selected_session['title']}")
-                                
-                                # Create two columns for the first row
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    st.markdown(f"**Time:** {selected_session['time']}")
-                                    st.markdown(f"**Track:** {selected_session['track']}")
-                                with col2:
-                                    st.markdown(f"**Location:** {selected_session['location']}")
-                                    if selected_session.get('session_code'):
-                                        st.markdown(f"**Session Code:** {selected_session['session_code']}")
-
-                                # Technical level
-                                if selected_session.get('technical_level'):
-                                    st.markdown(f"**Technical Level:** {selected_session['technical_level']}")
-
-                                # Speakers
-                                st.markdown(f"**Speaker(s):** {selected_session['speaker']}")
-
-
-                                # In the display section:
-                                # Description
-                                if selected_session.get('description') and selected_session['description'] != 'nan':
-                                    description = selected_session['description']
-                                    if isinstance(description, str) and description.strip():
-                                        st.markdown('<div class="description-expander">', unsafe_allow_html=True)
-                                        with st.expander("📝 Description"):
-                                            st.markdown(description)
-                                        st.markdown('</div>', unsafe_allow_html=True)
-                                        
-                                # Key Points
-                                if selected_session.get('points'):
-                                    points = selected_session['points']
-                                    if isinstance(points, str) and points.strip() and points.lower() != 'nan':
-                                        points_list = [p.strip() for p in points.split('\n') if p.strip() and p.lower() != 'nan']
-                                        if points_list:
-                                            st.markdown('<div class="key-points-expander">', unsafe_allow_html=True)
-                                            with st.expander("🎯 Key Points"):
-                                                for point in points_list:
-                                                    st.markdown(point)
-                                            st.markdown('</div>', unsafe_allow_html=True)
-
-                                # Expert Opinion
-                                if selected_session.get('expert_opinion') and selected_session['expert_opinion'] != 'nan':
-                                    expert_opinion = selected_session['expert_opinion']
-                                    if isinstance(expert_opinion, str) and expert_opinion.strip():
-                                        st.markdown('<div class="expert-opinion-expander">', unsafe_allow_html=True)
-                                        with st.expander("👨‍🏫 专家观点"):
-                                            opinion_list = [p.strip() for p in expert_opinion.split('\n') if p.strip()]
-                                            for opinion in opinion_list:
-                                                st.markdown(opinion)
-                                        st.markdown('</div>', unsafe_allow_html=True)
-
-                                # AI Interpretation
-                                if selected_session.get('ai_interpretation') and selected_session['ai_interpretation'] != 'nan':
-                                    ai_interpretation = selected_session['ai_interpretation']
-                                    if isinstance(ai_interpretation, str) and ai_interpretation.strip():
-                                        st.markdown('<div class="ai-interpretation-expander">', unsafe_allow_html=True)
-                                        with st.expander("🤖 AI解读"):
-                                            interpretation_list = [p.strip() for p in ai_interpretation.split('\n') if p.strip()]
-                                            for interpretation in interpretation_list:
-                                                st.markdown(interpretation)
-                                        st.markdown('</div>', unsafe_allow_html=True)
+                        # AI Interpretation
+                        if selected_session.get('ai_interpretation') and selected_session['ai_interpretation'] != 'nan':
+                            ai_interpretation = selected_session['ai_interpretation']
+                            if isinstance(ai_interpretation, str) and ai_interpretation.strip():
+                                st.markdown('<div class="ai-interpretation-expander">', unsafe_allow_html=True)
+                                with st.expander("🤖 AI解读"):
+                                    interpretation_list = [p.strip() for p in ai_interpretation.split('\n') if p.strip()]
+                                    for interpretation in interpretation_list:
+                                        st.markdown(interpretation)
+                                st.markdown('</div>', unsafe_allow_html=True)
 
         except Exception as e:
             st.error(f"Error rendering conference instance: {e}")
             import traceback
-
             st.error(traceback.format_exc())
