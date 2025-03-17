@@ -3,14 +3,19 @@ from system_prompts import system_prompt_for_merge_insights, system_prompt_for_d
 import pandas as pd
 import json
 import re
+import os
+from dotenv import load_dotenv
 from report_generator import (
     generate_daily_conference_report,
     save_markdown_report,
     markdown_to_word
 )
 
+# load api key from .env file
+load_dotenv()
+
 # 常量定义
-OPENROUTER_API_KEY = "" #换成相应的api key
+OPENROUTER_API_KEY = os.getenv("OPENAI_API_KEY")
 MODEL_NAME = "gpt-4o" 
 CSV_INPUT_FILE = "GTC_2025_CARI - 2025-03-16.csv"# test.csv
 CSV_OUTPUT_FILE = "GTC_2025_CARI - 2025-03-16_updated.csv" # test_updated.csv
