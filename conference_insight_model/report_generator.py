@@ -26,111 +26,59 @@ def generate_daily_conference_report(df):
     Returns:
         str: Markdown格式的每日参会快报
     """
-    # 获取第一行的日期作为大标题
-    date = df.iloc[0]['Date'] if 'Date' in df.columns else "会议快报"
-    
     # 创建Markdown文本
-    markdown_text = f"# {date}每日参会快报\n\n"
+    markdown_text = f"# 每日参会快报\n\n"
     
     # 遍历每一行生成报告内容
     for _, row in df.iterrows():
-        title = row.get('Title', '未知标题')
+        title = row.get('标题\nTitle', '未知标题')
         session_type = row.get('Session Type', '未知会话类型')
+        topic = row.get('Topic', '')
         
-        # 优先使用Expert Insight merged，如果没有则使用Expert Insight
-        insight = row.get('Expert Insight merged', '')
-        if (pd.isna(insight) or (isinstance(insight, str) and insight.isspace())) and 'Expert Insight' in row:
-            insight = row['Expert Insight']
-            print("insightinsightinsightinsightinsightinsightinsightinsightinsightinsightinsightinsight")
-            print(insight)
+        # 获取实事描述和对公司启示
+        facts_desc = row.get('实事描述\nDescription of Facts merged', '')
+        if pd.isna(facts_desc) or not facts_desc or (isinstance(facts_desc, str) and facts_desc.isspace()):
+            facts_desc = row.get('实事描述\nDescription of Facts', '')
             try:
-                insight_data = json.loads(insight)
-                if isinstance(insight_data, list):
-                    insight = "\n".join([f"- {item}" for item in insight_data])
+                facts_data = eval(facts_desc) if isinstance(facts_desc, str) else facts_desc
+                if isinstance(facts_data, list):
+                    facts_desc = "\n".join([f"{item}" for item in facts_data])
             except:
                 pass
         
-        # 处理撰稿人格式
-        composer = row.get('Composer', '')
+        company_insights = row.get('对公司启示\nInsights for Company merged', '')
+        if pd.isna(company_insights) or not company_insights or (isinstance(company_insights, str) and company_insights.isspace()):
+            company_insights = row.get('对公司启示\nInsights for Company', '')
+            try:
+                insights_data = eval(company_insights) if isinstance(company_insights, str) else company_insights
+                if isinstance(insights_data, list):
+                    company_insights = "\n".join([f"{item}" for item in insights_data])
+            except:
+                pass
+        
+        composer = row.get('撰稿人\nAuthors', '')
         formatted_composer = format_composer(composer)
         
-        # 处理关键人物或公司信息
-        speakers = row.get('Speaker', '')
+        speakers = row.get('Speakers', '')
         formatted_speakers = format_speakers(speakers)
         
-        # 添加到Markdown文本
-        markdown_text += f"## 【{session_type}】{title}\n\n"
-        markdown_text += f"### 关键人物或公司\n{formatted_speakers}\n\n"
-        markdown_text += f"### 洞察观点\n{insight}\n\n"
-        markdown_text += f"撰稿人：{formatted_composer}\n\n"
+        if not pd.isna(title) and title and not pd.isna(session_type) and session_type:
+            markdown_text += f"## 【{session_type}】{title}\n\n"
+        if not pd.isna(topic) and topic:
+            markdown_text += f"### 主题\n{topic}\n\n"
+        if formatted_speakers != "无":
+            markdown_text += f"### 演讲人或相关公司\n{formatted_speakers}\n\n"
+        if not pd.isna(facts_desc) and facts_desc:
+            markdown_text += f"### 实事描述\n{facts_desc}\n\n"
+        if not pd.isna(company_insights) and company_insights:
+            markdown_text += f"### 对华为的启示\n{company_insights}\n\n"
+        if formatted_composer != "未知撰稿人":
+            markdown_text += f"撰稿人：{formatted_composer}\n\n"
+        
         markdown_text += "---\n\n"
     
     return markdown_text
 
-
-def generate_daily_conference_word(df, output_file="conference_daily_report.docx"):
-    """
-    根据DataFrame生成每日参会快报的Word文档
-    
-    Args:
-        df (DataFrame): 包含会议数据的DataFrame
-        output_file (str): 输出的Word文件路径
-    """
-    doc = Document()
-    
-    # 获取第一行的日期作为大标题
-    date = df.iloc[0]['Date'] if 'Date' in df.columns else "会议快报"
-    
-    # 添加大标题
-    title = doc.add_heading(f"{date}每日参会快报", level=0)
-    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    
-    # 遍历每一行生成报告内容
-    for _, row in df.iterrows():
-        title = row.get('Title', '未知标题')
-        session_type = row.get('Session Type', '未知会话类型')
-        
-        # 添加小标题
-        doc.add_heading(f"【{session_type}】{title}", level=1)
-        
-        # 处理关键人物或公司信息
-        speakers = row.get('Speaker', '')
-        formatted_speakers = format_speakers(speakers)
-        
-        # 添加关键人物或公司段落
-        doc.add_heading("关键人物或公司", level=2)
-        doc.add_paragraph(formatted_speakers)
-        
-        # 添加洞察观点
-        doc.add_heading("洞察观点", level=2)
-        insight = row.get('Expert Insight merged', '')
-        if (pd.isna(insight) or (isinstance(insight, str) and insight.isspace())) and 'Expert Insight' in row:
-            insight = row['Expert Insight']
-            try:
-                insight_data = json.loads(insight)
-                if isinstance(insight_data, list):
-                    insight = "\n".join([f"• {str(item)}" for item in insight_data])
-            except:
-                pass
-        
-        # 确保 insight 是字符串类型
-        insight = str(insight) if insight is not None else ""
-        doc.add_paragraph(insight)
-        
-        # 处理撰稿人
-        composer = row.get('Composer', '')
-        formatted_composer = format_composer(composer)
-            
-        # 添加撰稿人
-        composer_para = doc.add_paragraph("撰稿人：")
-        composer_para.add_run(formatted_composer)
-        
-        # 添加分隔线
-        doc.add_paragraph("_" * 40)
-    
-    # 保存文档
-    doc.save(output_file)
-    print(f"Word格式的每日参会快报已保存到 {output_file}")
 
 
 def format_composer(composer):
@@ -222,4 +170,67 @@ def format_speakers(speakers):
         except:
             formatted_speakers = speakers
     
-    return formatted_speakers 
+    return formatted_speakers
+
+
+def markdown_to_word(markdown_text, output_file="conference_daily_report_from_md.docx"):
+    """
+    将Markdown文本直接转换为Word文档
+    
+    Args:
+        markdown_text (str): Markdown格式的文本
+        output_file (str): 输出的Word文件路径
+    """
+    import markdown
+    from bs4 import BeautifulSoup
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    
+    # 创建Word文档
+    doc = Document()
+    
+    # 将Markdown转换为HTML
+    html = markdown.markdown(markdown_text)
+    
+    # 使用BeautifulSoup解析HTML
+    soup = BeautifulSoup(html, 'html.parser')
+    
+    # 处理标题
+    for h1 in soup.find_all('h1'):
+        heading = doc.add_heading(h1.text, level=0)
+        heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    
+    # 处理段落和其他元素
+    current_element = soup.find('h1')
+    if current_element:
+        current_element = current_element.find_next()
+    else:
+        current_element = soup.find_next()
+    
+    while current_element:
+        if current_element.name == 'h2':
+            # 二级标题
+            doc.add_heading(current_element.text, level=1)
+        elif current_element.name == 'h3':
+            # 三级标题
+            doc.add_heading(current_element.text, level=2)
+        elif current_element.name == 'p':
+            # 普通段落
+            if current_element.text.strip() == '---':
+                # 处理分隔线
+                doc.add_paragraph('_' * 40)
+            else:
+                # 处理普通文本
+                doc.add_paragraph(current_element.text)
+        elif current_element.name == 'ul':
+            # 处理无序列表
+            for li in current_element.find_all('li'):
+                p = doc.add_paragraph()
+                p.add_run('• ' + li.text)
+        
+        # 移动到下一个元素
+        current_element = current_element.find_next()
+    
+    # 保存文档
+    doc.save(output_file)
+    print(f"从Markdown生成的Word文档已保存到 {output_file}") 
