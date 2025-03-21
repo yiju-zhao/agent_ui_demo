@@ -871,31 +871,100 @@ class Conference:
             selected_company
         )
 
-        # Session list and details
-        list_col, details_col = st.columns([1, 1.5])
+        # First, add some CSS for the scrollable session list
+        st.markdown("""
+            <style>
+            .session-card {
+                padding: 15px;
+                margin: 1px 0;
+                border: 1px solid #e6e6e6;
+                border-radius: 5px;
+                background-color: #f8f9fa;
+                transition: all 0.2s ease;
+            }
+            .session-card:hover {
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                transform: translateY(-2px);
+            }
+            .session-time {
+                color: #666666;
+                font-size: 0.9em;
+                margin-bottom: 8px;
+            }
+            .session-title {
+                color: #1f77b4;
+                font-weight: bold;
+                margin-bottom: 8px;
+                font-size: 1.1em;
+            }
+            .session-companies {
+                color: #666666;
+                font-size: 0.9em;
+                margin-bottom: 8px;
+            }
+            .session-track {
+                display: inline-block;
+                padding: 2px 8px;
+                background-color: #e3f2fd;
+                color: #1976d2;
+                border-radius: 12px;
+                font-size: 0.8em;
+                margin-bottom: 8px;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
+        # Session list and details columns
+        list_col, details_col = st.columns([1, 2])
         
         with list_col:
-            st.markdown("### Sessions")
+            # st.markdown("### Sessions")
             if not filtered_sessions:
                 st.info("No sessions found for the selected filters.")
             else:
                 st.markdown(f"Showing {len(filtered_sessions)} session(s)")
                 
-                for i, session in enumerate(filtered_sessions):
-                    st.markdown(
-                        f"""<div style='color: #666666; font-size: 0.9em; 
-                        margin-bottom: 2px;'>{session['time']}</div>""",
-                        unsafe_allow_html=True
-                    )
+                # Create a scrollable container
+                session_container = st.container()
+                
+                # Set a fixed height for the container
+                with session_container:
+                    # Create an empty element with custom CSS for scrolling
+                    st.markdown("""
+                        <style>
+                        [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
+                            max-height: 600px;
+                            overflow-y: auto;
+                        }
+                        </style>
+                    """, unsafe_allow_html=True)
                     
-                    st.button(
-                        session['title'],
-                        key=f"session_btn_{tab_idx}_{i}",
-                        on_click=on_session_select,
-                        args=(i,),
-                        use_container_width=True,
-                        type="primary" if st.session_state.selected_session == i else "secondary"
-                    )
+                    for i, session in enumerate(filtered_sessions):
+                        # Extract company names from speaker information
+                        companies = session.get('speaker_companies', [])
+                        companies_str = ", ".join(companies) if companies else "No affiliated companies"
+                        
+                        # Create a session card
+                        st.markdown(f"""
+                            <div class="session-card">
+                                <div class="session-time">{session['time']}</div>
+                                <div class="session-title">{session['title']}</div>
+                                <div class="session-track">{session['track']}</div>
+                                <div class="session-companies">
+                                    <strong>Companies:</strong> {companies_str}
+                                </div>
+                            </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # Add a button for selecting the session
+                        st.button(
+                            "Show Details",
+                            key=f"session_btn_{tab_idx}_{i}",
+                            on_click=on_session_select,
+                            args=(i,),
+                            type="primary" if st.session_state.selected_session == i else "secondary",
+                            use_container_width=True
+                        )
 
         # Rest of the details column code remains the same
         with details_col:
@@ -903,25 +972,38 @@ class Conference:
             if st.session_state.selected_session is not None and st.session_state.selected_session < len(filtered_sessions):
                 selected_session = filtered_sessions[st.session_state.selected_session]
                 
-                # Title first
-                st.markdown(f"#### {selected_session['title']}")
-                
-                # Create two columns for the first row
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.markdown(f"**Time:** {selected_session['time']}")
-                    st.markdown(f"**Track:** {selected_session['track']}")
-                with col2:
-                    st.markdown(f"**Location:** {selected_session['location']}")
-                    if selected_session.get('session_code'):
-                        st.markdown(f"**Session Code:** {selected_session['session_code']}")
-
-                # Technical level
-                if selected_session.get('technical_level'):
-                    st.markdown(f"**Technical Level:** {selected_session['technical_level']}")
-
-                # Speakers
-                st.markdown(f"**Speaker(s):** {selected_session['speaker']}")
+                # Create a styled details card
+                st.markdown(f"""
+                    <div style="padding: 20px; border: 1px solid #e6e6e6; border-radius: 5px; background-color: #f8f9fa;">
+                        <h4 style="color: #1f77b4; margin-bottom: 15px;">{selected_session['title']}</h4>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                            <div>
+                                <strong>Time:</strong><br/>
+                                {selected_session['time']}
+                            </div>
+                            <div>
+                                <strong>Location:</strong><br/>
+                                {selected_session['location']}
+                            </div>
+                            <div>
+                                <strong>Track:</strong><br/>
+                                {selected_session['track']}
+                            </div>
+                            <div>
+                                <strong>Session Code:</strong><br/>
+                                {selected_session.get('session_code', 'N/A')}
+                            </div>
+                        </div>
+                        <div style="margin-bottom: 15px;">
+                            <strong>Technical Level:</strong><br/>
+                            {selected_session.get('technical_level', 'N/A')}
+                        </div>
+                        <div style="margin-bottom: 15px;">
+                            <strong>Speaker(s):</strong><br/>
+                            {selected_session['speaker']}
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
 
 
                 # In the display section:
