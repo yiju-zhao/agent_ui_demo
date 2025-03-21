@@ -216,6 +216,27 @@ class DashboardUI:
 
 
 def dashboard_page():
+    # 添加CSS来减少页面顶部的空白
+    st.markdown(
+        """
+        <style>
+        .block-container {
+            padding-top: 1rem;
+            padding-bottom: 0rem;
+        }
+        header {
+            visibility: hidden;
+        }
+        #MainMenu {
+            visibility: hidden;
+        }
+        footer {
+            visibility: hidden;
+        }
+        </style>
+    """,
+        unsafe_allow_html=True,
+    )
     """Main dashboard page entry point."""
     DashboardUI.render_sidebar()
     DashboardUI.render_main_content()

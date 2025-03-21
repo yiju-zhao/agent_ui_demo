@@ -528,6 +528,28 @@ def render_search_results(query, filters=None):
 
 def dataset_page():
     """Main dataset page function."""
+    # 添加CSS来减少页面顶部的空白
+    st.markdown(
+        """
+        <style>
+        .block-container {
+            padding-top: 1rem;
+            padding-bottom: 0rem;
+        }
+        header {
+            visibility: hidden;
+        }
+        #MainMenu {
+            visibility: hidden;
+        }
+        footer {
+            visibility: hidden;
+        }
+        </style>
+    """,
+        unsafe_allow_html=True,
+    )
+    
     # Initialize session state variables if they don't exist
     if "has_searched" not in st.session_state:
         st.session_state.has_searched = False

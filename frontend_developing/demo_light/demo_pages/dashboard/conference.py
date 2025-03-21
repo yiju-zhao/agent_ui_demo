@@ -776,6 +776,10 @@ class Conference:
         # if "filtered_sessions" not in st.session_state:
         #     st.session_state.filtered_sessions = None
 
+        # Define NVIDIA green color for GTC conference
+        theme_color = "#76b900" if conference.upper() == "GTC" else "#1f77b4"  # NVIDIA green vs default blue
+    
+
         # Callback functions for state updates
         def on_date_select(idx):
             st.session_state.active_tab = idx
@@ -798,21 +802,60 @@ class Conference:
         # Render conference header
         st.markdown(
             f"""
-            <div style='padding: 15px; margin-bottom: 20px; background-color: #f8f9fa; 
-                border-radius: 5px; border-left: 5px solid #1f77b4;'>
-                <h3 style='margin-top: 0; color: #1f77b4;'>{instance.conference_name} {instance.year}</h3>
-                <p><strong>Date:</strong> {instance.start_date.strftime('%B %d')} - 
-                {instance.end_date.strftime('%B %d, %Y')}</p>
-                <p><strong>Location:</strong> {instance.location or "Location not specified"}</p>
-                {f'<p><strong>Website:</strong> <a href="{instance.website}" target="_blank">{instance.website}</a></p>' 
+            <div style='padding: 10px; margin-bottom: 15px; background-color: #f8f9fa; 
+                border-radius: 5px; border-left: 5px solid {theme_color};'>
+                <div style='display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;'>
+                    <h3 style='margin: 0; color: {theme_color};'>{instance.conference_name} {instance.year}</h3>
+                    <div style='font-size: 0.9em;'>
+                        <span style='margin-right: 15px;'><strong>Date:</strong> {instance.start_date.strftime('%b %d')} - 
+                        {instance.end_date.strftime('%b %d, %Y')}</span>
+                        <span><strong>Location:</strong> {instance.location or "N/A"}</span>
+                    </div>
+                </div>
+                {f'<div style="font-size: 0.85em; margin-top: 5px;"><strong>Website:</strong> <a href="{instance.website}" target="_blank">{instance.website}</a></div>' 
                 if instance.website else ''}
             </div>
             """,
             unsafe_allow_html=True,
         )
 
+        # First, add some CSS for the scrollable session list with theme color
+        st.markdown(f"""
+            <style>
+            /* More compact session cards */
+            .session-card {{
+                padding: 8px;
+                margin-bottom: 8px;
+                border: 1px solid #e6e6e6;
+                border-radius: 5px;
+                background-color: #f8f9fa;
+            }}
+            .session-time {{
+                color: #666666;
+                font-size: 0.8em;
+            }}
+            .session-title {{
+                color: {theme_color};
+                font-weight: bold;
+                font-size: 0.95em;
+                margin: 3px 0;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }}
+            .session-track {{
+                display: inline-block;
+                padding: 1px 6px;
+                background-color: {theme_color}20;
+                color: {theme_color};
+                border-radius: 10px;
+                font-size: 0.75em;
+            }}
+            </style>
+        """, unsafe_allow_html=True)
+
         # Date selection buttons
-        st.markdown("### Select Date")
+        # st.markdown("### Select Date")
         date_cols = st.columns(len(date_labels))
         for i, (label, col) in enumerate(zip(date_labels, date_cols)):
             with col:
@@ -830,37 +873,37 @@ class Conference:
         day_data = session_data[tab_idx]
         day_filter_options = filter_options[tab_idx]
 
-        # Filter UI
-        st.subheader("Filter Sessions")
-        filter_cols = st.columns(4)
-        
-        with filter_cols[0]:
-            selected_track = st.selectbox(
-                "Filter by topic:",
-                options=["All Topics"] + day_filter_options["topics"],
-                key=f"topic_filter_{tab_idx}"
-            )
-        
-        with filter_cols[1]:
-            selected_time = st.selectbox(
-                "Filter by start time:",
-                options=["All Hours"] + day_filter_options["times"],
-                key=f"time_filter_{tab_idx}"
-            )
-        
-        with filter_cols[2]:
-            selected_venue = st.selectbox(
-                "Filter by venue:",
-                options=["All Venues"] + day_filter_options["venues"],
-                key=f"venue_filter_{tab_idx}"
-            )
-        
-        with filter_cols[3]:
-            selected_company = st.selectbox(
-                "Filter by company:",
-                options=["All Companies"] + day_filter_options["companies"],
-                key=f"company_filter_{tab_idx}"
-            )
+        # Filter UI - OPTIMIZED WITH SMALLER COLUMNS AND EXPANDER
+        with st.expander("Filter Sessions", expanded=False):
+            filter_cols = st.columns(4)
+            
+            with filter_cols[0]:
+                selected_track = st.selectbox(
+                    "Topic:",
+                    options=["All Topics"] + day_filter_options["topics"],
+                    key=f"topic_filter_{tab_idx}"
+                )
+            
+            with filter_cols[1]:
+                selected_time = st.selectbox(
+                    "Start time:",
+                    options=["All Hours"] + day_filter_options["times"],
+                    key=f"time_filter_{tab_idx}"
+                )
+            
+            with filter_cols[2]:
+                selected_venue = st.selectbox(
+                    "Venue:",
+                    options=["All Venues"] + day_filter_options["venues"],
+                    key=f"venue_filter_{tab_idx}"
+                )
+            
+            with filter_cols[3]:
+                selected_company = st.selectbox(
+                    "Company:",
+                    options=["All Companies"] + day_filter_options["companies"],
+                    key=f"company_filter_{tab_idx}"
+                )
 
         # Get filtered sessions
         filtered_sessions = Conference._apply_filters(
@@ -871,94 +914,34 @@ class Conference:
             selected_company
         )
 
-        # First, add some CSS for the scrollable session list
-        st.markdown("""
-            <style>
-            .session-card {
-                padding: 15px;
-                margin: 1px 0;
-                border: 1px solid #e6e6e6;
-                border-radius: 5px;
-                background-color: #f8f9fa;
-                transition: all 0.2s ease;
-            }
-            .session-card:hover {
-                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-                transform: translateY(-2px);
-            }
-            .session-time {
-                color: #666666;
-                font-size: 0.9em;
-                margin-bottom: 8px;
-            }
-            .session-title {
-                color: #1f77b4;
-                font-weight: bold;
-                margin-bottom: 8px;
-                font-size: 1.1em;
-            }
-            .session-companies {
-                color: #666666;
-                font-size: 0.9em;
-                margin-bottom: 8px;
-            }
-            .session-track {
-                display: inline-block;
-                padding: 2px 8px;
-                background-color: #e3f2fd;
-                color: #1976d2;
-                border-radius: 12px;
-                font-size: 0.8em;
-                margin-bottom: 8px;
-            }
-            </style>
-        """, unsafe_allow_html=True)
-
         # Session list and details columns
-        list_col, details_col = st.columns([1, 2])
-        
+        list_col, details_col = st.columns([1, 1.9])
+
+        # Display session count or "No sessions" message outside the scrollable container
         with list_col:
-            # st.markdown("### Sessions")
             if not filtered_sessions:
                 st.info("No sessions found for the selected filters.")
             else:
-                st.markdown(f"Showing {len(filtered_sessions)} session(s)")
-                
-                # Create a scrollable container
-                session_container = st.container()
-                
-                # Set a fixed height for the container
-                with session_container:
-                    # Create an empty element with custom CSS for scrolling
-                    st.markdown("""
-                        <style>
-                        [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
-                            max-height: 600px;
-                            overflow-y: auto;
-                        }
-                        </style>
-                    """, unsafe_allow_html=True)
-                    
+                st.markdown(f"{len(filtered_sessions)} session(s)", unsafe_allow_html=True)
+            
+            # Create a scrollable container for the session list only if we have sessions
+            if filtered_sessions:
+                with st.container(height=900):  # Increased height to show more sessions
+                    # Add sessions to the container
                     for i, session in enumerate(filtered_sessions):
-                        # Extract company names from speaker information
-                        companies = session.get('speaker_companies', [])
-                        companies_str = ", ".join(companies) if companies else "No affiliated companies"
-                        
-                        # Create a session card
+                        # Create a compact card for each session
                         st.markdown(f"""
                             <div class="session-card">
-                                <div class="session-time">{session['time']}</div>
-                                <div class="session-title">{session['title']}</div>
+                                <div class="session-time">{session['session_code']}</div>
+                                <div class="session-title" title="{session['title']}">{session['title']}</div>
                                 <div class="session-track">{session['track']}</div>
-                                <div class="session-companies">
-                                    <strong>Companies:</strong> {companies_str}
-                                </div>
+                                
                             </div>
                         """, unsafe_allow_html=True)
                         
-                        # Add a button for selecting the session
+                        # Add a compact button
                         st.button(
-                            "Show Details",
+                            "Details",  # Shorter button text
                             key=f"session_btn_{tab_idx}_{i}",
                             on_click=on_session_select,
                             args=(i,),
@@ -968,14 +951,16 @@ class Conference:
 
         # Rest of the details column code remains the same
         with details_col:
-            st.markdown("### Session Details")
+            st.markdown("""
+                <div style="height: 40px;"></div>
+            """, unsafe_allow_html=True)
             if st.session_state.selected_session is not None and st.session_state.selected_session < len(filtered_sessions):
                 selected_session = filtered_sessions[st.session_state.selected_session]
                 
                 # Create a styled details card
                 st.markdown(f"""
                     <div style="padding: 20px; border: 1px solid #e6e6e6; border-radius: 5px; background-color: #f8f9fa;">
-                        <h4 style="color: #1f77b4; margin-bottom: 15px;">{selected_session['title']}</h4>
+                        <h4 style="color: {theme_color}; margin-bottom: 15px;">{selected_session['title']}</h4>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
                             <div>
                                 <strong>Time:</strong><br/>
@@ -1004,7 +989,6 @@ class Conference:
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
-
 
                 # In the display section:
                 # Description

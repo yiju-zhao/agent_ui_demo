@@ -20,7 +20,7 @@ def load_css():
 def main():
     st.set_page_config(layout="wide")
     load_css()
-    st.title("DeepSight UI Demo")
+    st.title("DeepSight Demo")
 
     # initialize session_state
     if "selected_article_index" not in st.session_state:
