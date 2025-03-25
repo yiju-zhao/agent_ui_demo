@@ -9,17 +9,10 @@ from utility.db_util import (
     DataManagerContext,
     conference_stat_df,
     aggregate_stat_df,
-    DataLoader,
-    CompanyMatcher,
-    TopicAnalyzer,
 )
-from utility.visualization_utli import DashboardLayout, ConferenceVisualization, CompanyVisualization, TopicVisualization
-from utility.conf_util import SessionFilterHandler
+from utility.visualization_utli import DashboardLayout
 import plotly.graph_objects as go
-import altair as alt
 import circlify
-import plotly.express as px  # Add this import for Plotly Express
-
 
 
 class Conference:
@@ -33,6 +26,97 @@ class Conference:
         text = text.replace("<", "&lt;").replace(">", "&gt;")
         text = text.replace("\n", "<br>")
         return text
+    
+    @staticmethod
+    def load_session_data(instance_id=None):
+        """Load session data from database"""
+        try:
+            with DataManagerContext() as managers:
+                if instance_id:
+                    # Get sessions through conference repository
+                    sessions = managers["conference"].get_sessions_by_instance(
+                        instance_id
+                    )
+                    if not sessions:
+                        return []
+
+                    # Group sessions by date
+                    session_by_date = {}
+                    for session in sessions:
+                        date_str = session.date.strftime("%Y-%m-%d")
+                        if date_str not in session_by_date:
+                            session_by_date[date_str] = []
+
+                        # Find related speakers
+                        speaker_list = []
+                        speaker_companies = []
+                        
+                        for speaker in session.speaker_to_session:
+                            # Get affiliation name using affiliation_id
+                            affiliation_name = ""
+                            if speaker.affiliation_id:
+                                affiliation = managers["org"].get_affiliation_by_id(
+                                    speaker.affiliation_id
+                                )
+                                if affiliation:
+                                    affiliation_name = affiliation.name
+                                    speaker_companies.append(affiliation_name)
+
+                            # Format speaker string
+                            if speaker.position:
+                                speaker_str = f"{speaker.name} ({speaker.position} | {affiliation_name})"
+                            else:
+                                speaker_str = f"{speaker.name} ({affiliation_name})" if affiliation_name else speaker.name
+                            
+                            speaker_list.append(speaker_str)
+
+                        formatted_session = {
+                            "time": f"{session.start_time.strftime('%I:%M %p')} - {session.end_time.strftime('%I:%M %p')}",
+                            "title": session.title,
+                            "speaker": ", ".join(speaker_list),
+                            "location": (
+                                f"{session.venue}, {session.room}"
+                                if session.room
+                                else session.venue
+                            ),
+                            "venue": session.venue,  # Add venue separately for filtering
+                            "speaker_companies": speaker_companies,  # Add companies for filtering
+                            "track": session.topic,
+                            "description": session.description if session.description and session.description != 'nan' else "",
+                            "session_code": session.session_code,
+                            "technical_level": session.technical_level,
+                            "full_topic": session.topic,
+                            "points": session.points if session.points and session.points != 'nan' else "",
+                            "expert_opinion": session.expert_view if session.expert_view and session.expert_view != 'nan' else "",
+                        }
+                        session_by_date[date_str].append(formatted_session)
+
+                    # Convert to list and sort chronologically
+                    session_data = [
+                        {
+                            "date": date_str,
+                            "day": datetime.strptime(date_str, "%Y-%m-%d").strftime(
+                                "%A"
+                            ),
+                            "sessions": sorted(
+                                sessions_list,
+                                key=lambda x: datetime.strptime(
+                                    x["time"].split(" - ")[0], "%I:%M %p"
+                                ),
+                            ),
+                        }
+                        for date_str, sessions_list in session_by_date.items()
+                    ]
+
+                    # Sort days chronologically
+                    session_data.sort(key=lambda x: x["date"])
+
+                    return session_data
+
+                return []
+        except Exception as e:
+            st.error(f"Error loading session data: {e}")
+            return []
 
     # ---------------------------------------------------------------------------- #
     #                                   overview                                   #
@@ -210,8 +294,45 @@ class Conference:
                         unsafe_allow_html=True,
                     )
 
-        # Yearly trends chart
-        ConferenceVisualization.render_trend_charts(fake_data["yearly_stats"], "Conference and Paper Trends")
+        # st.subheader("Conference and Paper Trends")
+        # ---------------------------- Yearly trends chart --------------------------- #
+        yearly_fig = go.Figure()
+
+        # Add papers trend
+        yearly_fig.add_trace(
+            go.Scatter(
+                x=fake_data["yearly_stats"]["years"],
+                y=fake_data["yearly_stats"]["paper_counts"],
+                name="Papers",
+                mode="lines+markers",
+                line=dict(color="blue", width=2),
+            )
+        )
+
+        # Add conferences trend on secondary y-axis
+        yearly_fig.add_trace(
+            go.Scatter(
+                x=fake_data["yearly_stats"]["years"],
+                y=fake_data["yearly_stats"]["conference_counts"],
+                name="Conferences",
+                mode="lines+markers",
+                line=dict(color="red", width=2),
+                yaxis="y2",
+            )
+        )
+
+        yearly_fig.update_layout(
+            title="Conference and Paper Trends",
+            xaxis=dict(title="Year"),
+            yaxis=dict(title="Number of Papers"),
+            yaxis2=dict(title="Number of Conferences", overlaying="y", side="right"),
+            hovermode="x unified",
+            showlegend=True,
+            legend=dict(
+                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+            ),
+        )
+        st.plotly_chart(yearly_fig, use_container_width=True)
 
         # Additional information or notes
         st.markdown(
@@ -227,6 +348,7 @@ class Conference:
     @staticmethod
     def render_conference_overview(conference: str):
         """Render overview of specific conference with session data and filtering options."""
+        """Render overview of all conferences."""
         # Fake data for conference trends
         fake_data = {
             "years": [2019, 2020, 2021, 2022, 2023],
@@ -430,7 +552,7 @@ class Conference:
             ],
         }
 
-        st.header(f"Conference Year Overview: {year}")
+        st.header("Conference Years Overview")
 
         # Create two columns for the layout
         left_col, right_col = st.columns([2, 1])
@@ -508,6 +630,7 @@ class Conference:
             )
 
             academic_fig.update_layout(
+                title="Academic Institutions",
                 showlegend=False,
                 height=500,
                 margin=dict(t=0, b=0, l=0, r=0),
@@ -517,7 +640,7 @@ class Conference:
 
         with right_col:
             # Conferences (Top Right)
-            st.subheader(f"Conferences in {year}")
+            st.subheader(f"Conference in {year}")
             from datetime import datetime
 
             sorted_conferences = sorted(
@@ -552,7 +675,7 @@ class Conference:
     #                                   instance                                   #
     # ---------------------------------------------------------------------------- #
     @staticmethod
-    @cache_data(ttl=3600)  # Cache for 1 hour
+    @st.cache_data(ttl=3600)  # Cache for 1 hour
     def _prepare_instance_data(year: int, conference: str):
         """Cache all data preparation for the instance"""
         with DataManagerContext() as managers:
@@ -561,8 +684,7 @@ class Conference:
             if not instance:
                 return None
             
-            # Use the DataLoader utility to load session data
-            session_data = DataLoader.load_session_data(instance.instance_id)
+            session_data = Conference.load_session_data(instance.instance_id)
             if not session_data:
                 return None
             
@@ -574,8 +696,20 @@ class Conference:
                 for day, date in zip(days_of_week, available_dates)
             ]
             
-            # Prepare filter options for each day using the SessionFilterHandler
-            filter_options = SessionFilterHandler.prepare_filter_options(session_data)
+            # Prepare filter options for each day
+            filter_options = []
+            for day_data in session_data:
+                filter_options.append({
+                    "topics": sorted(list(set(s["track"] for s in day_data["sessions"]))),
+                    "times": sorted(list(set(
+                        s["time"].split(" - ")[0] for s in day_data["sessions"]
+                    )), key=lambda x: datetime.strptime(x, "%I:%M %p")),
+                    "venues": sorted(list(set(s["venue"] for s in day_data["sessions"]))),
+                    "companies": sorted(list(set(
+                        company for s in day_data["sessions"]
+                        for company in s["speaker_companies"]
+                    )))
+                })
             
             return {
                 "instance": instance,
@@ -583,23 +717,69 @@ class Conference:
                 "date_labels": date_labels,
                 "filter_options": filter_options
             }
+        
+    @staticmethod
+    @st.cache_data(ttl=3600)  # Cache for 1 hour
+    def _apply_filters(sessions, track, time, venue, company):
+        """
+        Filter sessions based on selected criteria.
+        
+        Args:
+            sessions (list): List of session dictionaries
+            track (str): Selected track/topic filter
+            time (str): Selected time filter
+            venue (str): Selected venue filter
+            company (str): Selected company filter
+            
+        Returns:
+            list: Filtered list of sessions
+        """
+        filtered_sessions = sessions
+
+        if track != "All Topics":
+            filtered_sessions = [
+                session for session in filtered_sessions
+                if session["track"] == track
+            ]
+
+        if time != "All Hours":
+            filtered_sessions = [
+                session for session in filtered_sessions
+                if session["time"].startswith(time)
+            ]
+            
+        if venue != "All Venues":
+            filtered_sessions = [
+                session for session in filtered_sessions
+                if session["venue"] == venue
+            ]
+            
+        if company != "All Companies":
+            filtered_sessions = [
+                session for session in filtered_sessions
+                if company in session["speaker_companies"]
+            ]
+            
+        return filtered_sessions
     
     @staticmethod
     def render_instance(year: int, conference: str):
-        """Render conference instance with session data and statistics."""
         # Ensure we preserve the current view
         st.session_state.filter_mode_menu = "Conference"
         st.session_state.selected_year = year
         st.session_state.selected_conference = conference
-    
+        
         # Initialize session states if not exists
         if "active_tab" not in st.session_state:
             st.session_state.active_tab = 0
         if "selected_session" not in st.session_state:
             st.session_state.selected_session = None
+        # if "filtered_sessions" not in st.session_state:
+        #     st.session_state.filtered_sessions = None
 
-        # Define theme color
-        theme_color = "#1f77b4"  # Default color
+        # Define NVIDIA green color for GTC conference
+        theme_color = "#1f77b4" # Default color
+    
 
         # Callback functions for state updates
         def on_date_select(idx):
@@ -620,60 +800,71 @@ class Conference:
         date_labels = data["date_labels"]
         filter_options = data["filter_options"]
 
-        # Determine if this is a session-based conference (like GTC) or a paper-based academic conference
-        is_session_based = Conference._is_session_based_conference(conference)
-        
-        # Create tabs for different views
-        if is_session_based:
-            tabs = st.tabs(["Session Catalog ", "Insights"])
-        else:
-            tabs = st.tabs(["Papers", "Statistics"])
-        
-        with tabs[0]:
-            # Render conference header using the visualization utility
-            ConferenceVisualization.render_conference_header(instance, theme_color)
-            
-            if is_session_based:
-                # For session-based conferences like GTC
-                Conference._render_session_based_view(
-                    instance, session_data, date_labels, filter_options, 
-                    on_date_select, on_session_select, theme_color
-                )
-            else:
-                # For paper-based academic conferences
-                Conference._render_paper_based_view(instance, year, conference)
-        
-        with tabs[1]:
-            # Statistics or insights tab content
-            if is_session_based:
-                Conference._render_session_insights(instance)
-            else:
-                Conference.render_instance_statistics(year, conference, instance)
+        # Render conference header
+        st.markdown(
+            f"""
+            <div style='padding: 10px; margin-bottom: 15px; background-color: #f8f9fa; 
+                border-radius: 5px; border-left: 5px solid {theme_color};'>
+                <div style='display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;'>
+                    <h3 style='margin: 0; color: {theme_color};'>{instance.conference_name} {instance.year}</h3>
+                    <div style='font-size: 0.9em;'>
+                        <span style='margin-right: 15px;'><strong>Date:</strong> {instance.start_date.strftime('%b %d')} - 
+                        {instance.end_date.strftime('%b %d, %Y')}</span>
+                        <span><strong>Location:</strong> {instance.location or "N/A"}</span>
+                    </div>
+                </div>
+                {f'<div style="font-size: 0.85em; margin-top: 5px;"><strong>Website:</strong> <a href="{instance.website}" target="_blank">{instance.website}</a></div>' 
+                if instance.website else ''}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    @staticmethod
-    def _is_session_based_conference(conference: str) -> bool:
-        """Determine if a conference is session-based (like GTC) or paper-based."""
-        # This could be based on a list of known session-based conferences
-        # or by checking if there are sessions in the database
-        session_based_conferences = ["GTC", "NVIDIA GTC", "GPU Technology Conference"]
-        return conference in session_based_conferences
-
-    @staticmethod
-    def _render_session_based_view(instance, session_data, date_labels, filter_options, 
-                                on_date_select, on_session_select, theme_color):
-        """Render the view for session-based conferences like GTC."""
-        # Apply session styles
-        ConferenceVisualization.apply_session_styles(theme_color)
+        # First, add some CSS for the scrollable session list with theme color
+        st.markdown(f"""
+            <style>
+            /* More compact session cards */
+            .session-card {{
+                padding: 8px;
+                margin-bottom: 8px;
+                border: 1px solid #e6e6e6;
+                border-radius: 5px;
+                background-color: #f8f9fa;
+            }}
+            .session-time {{
+                color: #666666;
+                font-size: 0.8em;
+            }}
+            .session-title {{
+                color: {theme_color};
+                font-weight: bold;
+                font-size: 0.95em;
+                margin: 3px 0;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }}
+            .session-track {{
+                display: inline-block;
+                padding: 1px 6px;
+                background-color: {theme_color}20;
+                color: {theme_color};
+                border-radius: 10px;
+                font-size: 0.75em;
+            }}
+            </style>
+        """, unsafe_allow_html=True)
 
         # Date selection buttons
+        # st.markdown("### Select Date")
         date_cols = st.columns(len(date_labels))
         for i, (label, col) in enumerate(zip(date_labels, date_cols)):
             with col:
                 st.button(
                     label,
                     key=f"date_btn_{i}",
-                    on_click=on_date_select,
-                    args=(i,),
+                    on_click=on_date_select,  # Add the callback
+                    args=(i,),                # Pass the index as argument
                     use_container_width=True,
                     type="primary" if st.session_state.active_tab == i else "secondary"
                 )
@@ -683,13 +874,40 @@ class Conference:
         day_data = session_data[tab_idx]
         day_filter_options = filter_options[tab_idx]
 
-        # Filter UI using the SessionFilterHandler
-        selected_track, selected_time, selected_venue, selected_company = SessionFilterHandler.render_filter_ui(
-            day_filter_options, tab_idx
-        )
+        # Filter UI - OPTIMIZED WITH SMALLER COLUMNS AND EXPANDER
+        with st.expander("Filter Sessions", expanded=False):
+            filter_cols = st.columns(4)
+            
+            with filter_cols[0]:
+                selected_track = st.selectbox(
+                    "Topic:",
+                    options=["All Topics"] + day_filter_options["topics"],
+                    key=f"topic_filter_{tab_idx}"
+                )
+            
+            with filter_cols[1]:
+                selected_time = st.selectbox(
+                    "Start time:",
+                    options=["All Hours"] + day_filter_options["times"],
+                    key=f"time_filter_{tab_idx}"
+                )
+            
+            with filter_cols[2]:
+                selected_venue = st.selectbox(
+                    "Venue:",
+                    options=["All Venues"] + day_filter_options["venues"],
+                    key=f"venue_filter_{tab_idx}"
+                )
+            
+            with filter_cols[3]:
+                selected_company = st.selectbox(
+                    "Company:",
+                    options=["All Companies"] + day_filter_options["companies"],
+                    key=f"company_filter_{tab_idx}"
+                )
 
         # Get filtered sessions
-        filtered_sessions = SessionFilterHandler.apply_filters(
+        filtered_sessions = Conference._apply_filters(
             day_data["sessions"],
             selected_track,
             selected_time,
@@ -712,8 +930,15 @@ class Conference:
                 with st.container(height=900):  # Increased height to show more sessions
                     # Add sessions to the container
                     for i, session in enumerate(filtered_sessions):
-                        # Create a compact card for each session using the visualization utility
-                        ConferenceVisualization.render_session_card(session)
+                        # Create a compact card for each session
+                        st.markdown(f"""
+                            <div class="session-card">
+                                <div class="session-time">{session['session_code']}</div>
+                                <div class="session-title" title="{session['title']}">{session['title']}</div>
+                                <div class="session-track">{session['track']}</div>
+                                
+                            </div>
+                        """, unsafe_allow_html=True)
                         
                         # Add a compact button
                         st.button(
@@ -725,7 +950,7 @@ class Conference:
                             use_container_width=True
                         )
 
-        # Rest of the details column code
+        # Rest of the details column code remains the same
         with details_col:
             st.markdown("""
                 <div style="height: 40px;"></div>
@@ -733,9 +958,27 @@ class Conference:
             if st.session_state.selected_session is not None and st.session_state.selected_session < len(filtered_sessions):
                 selected_session = filtered_sessions[st.session_state.selected_session]
                 
-                # Render session details using the visualization utility
-                ConferenceVisualization.render_session_details(selected_session, theme_color)
+                # Create a styled details card
+                st.markdown(f"""
+                    <div style="padding: 12px; border: 1px solid #e6e6e6; border-radius: 5px; background-color: #f8f9fa;">
+                        <h4 style="color: {theme_color}; margin: 0 0 10px 0; font-size: 1.1em;">{selected_session['title']}</h4>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; font-size: 0.9em;">
+                            <div><strong>Time:</strong> {selected_session['time']}</div>
+                            <div><strong>Location:</strong> {selected_session['location']}</div>
+                            <div><strong>Track:</strong> {selected_session['track']}</div>
+                            <div><strong>Code:</strong> {selected_session.get('session_code', 'N/A')}</div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.9em;">
+                            <div style="flex: 1;"><strong>Level:</strong> {selected_session.get('technical_level', 'N/A')}</div>
+                        </div>
+                        <div style="margin-top: 8px; font-size: 0.9em;">
+                            <strong>Speaker(s):</strong> {selected_session['speaker']}
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
 
+
+                # In the display section:
                 # Description
                 if selected_session.get('description') and selected_session['description'] != 'nan':
                     description = selected_session['description']
@@ -779,137 +1022,7 @@ class Conference:
                                 st.markdown(interpretation)
                         st.markdown('</div>', unsafe_allow_html=True)
 
-    @staticmethod
-    def _render_paper_based_view(instance, year, conference):
-        """Render the view for paper-based academic conferences."""
-        # This would display paper information, authors, citations, etc.
-        with DataManagerContext() as managers:
-            papers = managers["paper"].get_papers_by_conference(conference, year)
-            
-            if not papers:
-                st.info(f"No papers found for {conference} {year}")
-                return
-                
-            # Display paper count
-            st.metric("Total Papers", len(papers))
-            
-            # Create a dataframe with paper information
-            papers_df = pd.DataFrame([
-                {
-                    "Title": paper.title,
-                    "Authors": ", ".join([a.name for a in paper.author_to_paper]),
-                    "Citations": paper.citation_count or 0,
-                    "Year": paper.year
-                }
-                for paper in papers
-            ])
-            
-            # Display the papers in a table
-            st.dataframe(papers_df, use_container_width=True)
-
-    @staticmethod
-    def _render_session_insights(instance):
-        """Render insights for session-based conferences."""
-        # st.subheader("Conference Insights")
-        
-        Conference._render_topic_insights(instance)
-        Conference._render_company_involvement(instance)
-    
-    def _render_topic_insights(instance):
-        """Render topic-related insights for session-based conferences."""
-        with DataManagerContext() as managers:
-            # Get all sessions for this instance
-            sessions = managers["conference"].get_sessions_by_instance(instance.instance_id)
-            
-            if not sessions:
-                st.info(f"No sessions found for {instance.conference_name} {instance.year}")
-                return
-            
-            # Extract topic data using the TopicAnalyzer utility
-            topic_data = TopicAnalyzer.extract_topic_data(sessions)
-            
-            if not topic_data:
-                st.info("No topic data available")
-                return
-            
-            # Bar chart for session count by high-level topic
-            # Check if we have too many topics
-            if len(topic_data) > 18:
-                st.info(f"Showing top 18 topics out of {len(topic_data)} total topics")
-            
-            # Create and display the bar chart
-            bar_chart = TopicVisualization.create_topic_bar_chart(
-                topic_data, 
-                instance.conference_name, 
-                instance.year
-            )
-            
-            if bar_chart:
-                st.altair_chart(bar_chart, use_container_width=True)
-            else:
-                st.info("Could not create topic bar chart")
-
-
-    def _render_company_involvement(instance):
-        """
-        Render company involvement in GTC sessions by topic.
-        Cloud providers are shown horizontally with companies on y-axis.
-        OEM companies are shown vertically.
-        
-        Args:
-            instance: The conference instance object
-        """
-        with DataManagerContext() as managers:
-            # Use the DataLoader utility to load session data
-            session_data = DataLoader.load_session_data(instance.instance_id)
-            
-            if not session_data:
-                st.info(f"No sessions found for {instance.conference_name} {instance.year}")
-                return
-            
-            # Create chart for cloud companies
-            cloud_data = CompanyMatcher.extract_company_topic_data(
-                session_data, 
-                CompanyMatcher.CLOUD_COMPANIES, 
-                CompanyMatcher.CLOUD_COMPANY_ALIASES
-            )
-            
-            if cloud_data:
-                # Create a horizontal bar chart for cloud providers with companies on y-axis
-                cloud_chart = CompanyVisualization.create_company_involvement_chart(
-                    cloud_data,
-                    CompanyMatcher.CLOUD_COMPANIES,
-                    "Cloud",
-                    instance.conference_name,
-                    instance.year,
-                    horizontal=True  # Use horizontal orientation with companies on y-axis
-                )
-                if cloud_chart:
-                    st.altair_chart(cloud_chart, use_container_width=True)
-                else:
-                    st.info("No data available for cloud companies")
-            else:
-                st.info("No data available for cloud companies")
-            
-            # Create chart for OEM companies
-            oem_data = CompanyMatcher.extract_company_topic_data(
-                session_data, 
-                CompanyMatcher.OEM_COMPANIES, 
-                CompanyMatcher.OEM_COMPANY_ALIASES
-            )
-            
-            if oem_data:
-                oem_chart = CompanyVisualization.create_company_involvement_chart(
-                    oem_data,
-                    CompanyMatcher.OEM_COMPANIES,
-                    "OEM",
-                    instance.conference_name,
-                    instance.year,
-                    horizontal=True
-                )
-                if oem_chart:
-                    st.altair_chart(oem_chart, use_container_width=True)
-                else:
-                    st.info("No data available for OEM companies")
-            else:
-                st.info("No data available for OEM companies")
+        # except Exception as e:
+        #     st.error(f"Error rendering conference instance: {e}")
+        #     import traceback
+        #     st.error(traceback.format_exc())

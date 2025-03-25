@@ -296,6 +296,9 @@ class Session(Base):
     speakers = Column(JSON)  # Store the full speaker information as JSON
     description = Column(Text)
     technical_level = Column(String(100))  # Technical - Advanced
+    expert_view = Column(Text)  # Expert points about the session
+    ai_analysis = Column(Text)  # AI analysis of the session
+
 
     # 定义与 ConferenceInstance 的关系
     instance_to_session = relationship(
