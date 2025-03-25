@@ -583,80 +583,105 @@ class Conference:
                 "date_labels": date_labels,
                 "filter_options": filter_options
             }
+        
+    @staticmethod
+    @cache_data(ttl=3600)  # Cache for 1 hour
+    def _get_topic_data_cached(instance_id):
+        """Cache topic data retrieval to prevent redundant database queries."""
+        with DataManagerContext() as managers:
+            # Get all sessions for this instance
+            sessions = managers["conference"].get_sessions_by_instance(instance_id)
+            if not sessions:
+                return None
+            
+            # Extract topic data using the TopicAnalyzer utility
+            return TopicAnalyzer.extract_topic_data(sessions)
+        
+    @staticmethod
+    @cache_data(ttl=3600)  # Cache for 1 hour
+    def _get_company_data_cached(instance_id):
+        """Cache company data retrieval to prevent redundant database queries."""
+        with DataManagerContext() as managers:
+            # Use the DataLoader utility to load session data
+            session_data = DataLoader.load_session_data(instance_id)
+            if not session_data:
+                return None, None
+            
+            # Extract company data
+            cloud_data = CompanyMatcher.extract_company_topic_data(
+                session_data, 
+                CompanyMatcher.CLOUD_COMPANIES, 
+                CompanyMatcher.CLOUD_COMPANY_ALIASES
+            )
+            
+            oem_data = CompanyMatcher.extract_company_topic_data(
+                session_data, 
+                CompanyMatcher.OEM_COMPANIES, 
+                CompanyMatcher.OEM_COMPANY_ALIASES
+            )
+            
+            return cloud_data, oem_data
     
     @staticmethod
-    def render_instance(year: int, conference: str):
-        """Render conference instance with session data and statistics."""
-        # Ensure we preserve the current view
-        st.session_state.filter_mode_menu = "Conference"
-        st.session_state.selected_year = year
-        st.session_state.selected_conference = conference
-    
-        # Initialize session states if not exists
-        if "active_tab" not in st.session_state:
-            st.session_state.active_tab = 0
-        if "selected_session" not in st.session_state:
-            st.session_state.selected_session = None
-
-        # Define theme color
-        theme_color = "#1f77b4"  # Default color
-
-        # Callback functions for state updates
-        def on_date_select(idx):
-            st.session_state.active_tab = idx
-            st.session_state.selected_session = None
-            
-        def on_session_select(idx):
-            st.session_state.selected_session = idx
-            
-        # Get cached data
-        data = Conference._prepare_instance_data(year, conference)
-        if data is None:
-            st.error(f"No conference instance found for {conference} {year}")
-            return
-
-        instance = data["instance"]
-        session_data = data["session_data"]
-        date_labels = data["date_labels"]
-        filter_options = data["filter_options"]
-
-        # Determine if this is a session-based conference (like GTC) or a paper-based academic conference
-        is_session_based = Conference._is_session_based_conference(conference)
+    def _render_session_insights(instance):
+        """Render insights for session-based conferences."""
+        # Get cached data using only the instance_id (which is hashable)
+        topic_data = Conference._get_topic_data_cached(instance.instance_id)
+        cloud_data, oem_data = Conference._get_company_data_cached(instance.instance_id)
         
-        # Create tabs for different views
-        if is_session_based:
-            tabs = st.tabs(["Session Catalog ", "Insights"])
+        # Render topic insights
+        if topic_data:
+            # Check if we have too many topics
+            if len(topic_data) > 18:
+                st.info(f"Showing top 18 topics out of {len(topic_data)} total topics")
+            
+            # Create and display the bar chart
+            bar_chart = TopicVisualization.create_topic_bar_chart(
+                topic_data, 
+                instance.conference_name, 
+                instance.year
+            )
+            
+            if bar_chart:
+                st.altair_chart(bar_chart, use_container_width=True)
+            else:
+                st.info("Could not create topic bar chart")
         else:
-            tabs = st.tabs(["Papers", "Statistics"])
+            st.info(f"No topic data available for {instance.conference_name} {instance.year}")
         
-        with tabs[0]:
-            # Render conference header using the visualization utility
-            ConferenceVisualization.render_conference_header(instance, theme_color)
-            
-            if is_session_based:
-                # For session-based conferences like GTC
-                Conference._render_session_based_view(
-                    instance, session_data, date_labels, filter_options, 
-                    on_date_select, on_session_select, theme_color
-                )
+        # Render company insights
+        if cloud_data:
+            # Create a horizontal bar chart for cloud providers with companies on y-axis
+            cloud_chart = CompanyVisualization.create_company_involvement_chart(
+                cloud_data,
+                CompanyMatcher.CLOUD_COMPANIES,
+                "Cloud",
+                instance.conference_name,
+                instance.year,
+                horizontal=True  # Use horizontal orientation with companies on y-axis
+            )
+            if cloud_chart:
+                st.altair_chart(cloud_chart, use_container_width=True)
             else:
-                # For paper-based academic conferences
-                Conference._render_paper_based_view(instance, year, conference)
+                st.info("No data available for cloud companies")
+        else:
+            st.info("No data available for cloud companies")
         
-        with tabs[1]:
-            # Statistics or insights tab content
-            if is_session_based:
-                Conference._render_session_insights(instance)
+        if oem_data:
+            oem_chart = CompanyVisualization.create_company_involvement_chart(
+                oem_data,
+                CompanyMatcher.OEM_COMPANIES,
+                "OEM",
+                instance.conference_name,
+                instance.year,
+                horizontal=True
+            )
+            if oem_chart:
+                st.altair_chart(oem_chart, use_container_width=True)
             else:
-                Conference.render_instance_statistics(year, conference, instance)
-
-    @staticmethod
-    def _is_session_based_conference(conference: str) -> bool:
-        """Determine if a conference is session-based (like GTC) or paper-based."""
-        # This could be based on a list of known session-based conferences
-        # or by checking if there are sessions in the database
-        session_based_conferences = ["GTC", "NVIDIA GTC", "GPU Technology Conference"]
-        return conference in session_based_conferences
+                st.info("No data available for OEM companies")
+        else:
+            st.info("No data available for OEM companies")
 
     @staticmethod
     def _render_session_based_view(instance, session_data, date_labels, filter_options, 
@@ -778,6 +803,81 @@ class Conference:
                             for interpretation in interpretation_list:
                                 st.markdown(interpretation)
                         st.markdown('</div>', unsafe_allow_html=True)
+    
+    @staticmethod
+    def render_instance(year: int, conference: str):
+        """Render conference instance with session data and statistics."""
+        # Ensure we preserve the current view
+        st.session_state.filter_mode_menu = "Conference"
+        st.session_state.selected_year = year
+        st.session_state.selected_conference = conference
+    
+        # Initialize session states if not exists
+        if "active_tab" not in st.session_state:
+            st.session_state.active_tab = 0
+        if "selected_session" not in st.session_state:
+            st.session_state.selected_session = None
+
+        # Define theme color
+        theme_color = "#1f77b4"  # Default color
+
+        # Callback functions for state updates
+        def on_date_select(idx):
+            st.session_state.active_tab = idx
+            st.session_state.selected_session = None
+            
+        def on_session_select(idx):
+            st.session_state.selected_session = idx
+            
+        # Get cached data
+        data = Conference._prepare_instance_data(year, conference)
+        if data is None:
+            st.error(f"No conference instance found for {conference} {year}")
+            return
+
+        instance = data["instance"]
+        session_data = data["session_data"]
+        date_labels = data["date_labels"]
+        filter_options = data["filter_options"]
+
+        # Determine if this is a session-based conference (like GTC) or a paper-based academic conference
+        is_session_based = Conference._is_session_based_conference(conference)
+        
+        # Create tabs for different views
+        if is_session_based:
+            tabs = st.tabs(["Session Catalog ", "Insights"])
+        else:
+            tabs = st.tabs(["Papers", "Statistics"])
+        
+        with tabs[0]:
+            # Render conference header using the visualization utility
+            ConferenceVisualization.render_conference_header(instance, theme_color)
+            
+            if is_session_based:
+                # For session-based conferences like GTC
+                Conference._render_session_based_view(
+                    instance, session_data, date_labels, filter_options, 
+                    on_date_select, on_session_select, theme_color
+                )
+            else:
+                # For paper-based academic conferences
+                Conference._render_paper_based_view(instance, year, conference)
+        
+        with tabs[1]:
+            # Statistics or insights tab content
+            if is_session_based:
+                Conference._render_session_insights(instance)
+            else:
+                Conference._render_instance_statistics(year, conference, instance)
+
+    @staticmethod
+    def _is_session_based_conference(conference: str) -> bool:
+        """Determine if a conference is session-based (like GTC) or paper-based."""
+        # This could be based on a list of known session-based conferences
+        # or by checking if there are sessions in the database
+        session_based_conferences = ["GTC", "NVIDIA GTC", "GPU Technology Conference"]
+        return conference in session_based_conferences
+
 
     @staticmethod
     def _render_paper_based_view(instance, year, conference):
@@ -806,110 +906,4 @@ class Conference:
             
             # Display the papers in a table
             st.dataframe(papers_df, use_container_width=True)
-
-    @staticmethod
-    def _render_session_insights(instance):
-        """Render insights for session-based conferences."""
-        # st.subheader("Conference Insights")
-        
-        Conference._render_topic_insights(instance)
-        Conference._render_company_involvement(instance)
     
-    def _render_topic_insights(instance):
-        """Render topic-related insights for session-based conferences."""
-        with DataManagerContext() as managers:
-            # Get all sessions for this instance
-            sessions = managers["conference"].get_sessions_by_instance(instance.instance_id)
-            
-            if not sessions:
-                st.info(f"No sessions found for {instance.conference_name} {instance.year}")
-                return
-            
-            # Extract topic data using the TopicAnalyzer utility
-            topic_data = TopicAnalyzer.extract_topic_data(sessions)
-            
-            if not topic_data:
-                st.info("No topic data available")
-                return
-            
-            # Bar chart for session count by high-level topic
-            # Check if we have too many topics
-            if len(topic_data) > 18:
-                st.info(f"Showing top 18 topics out of {len(topic_data)} total topics")
-            
-            # Create and display the bar chart
-            bar_chart = TopicVisualization.create_topic_bar_chart(
-                topic_data, 
-                instance.conference_name, 
-                instance.year
-            )
-            
-            if bar_chart:
-                st.altair_chart(bar_chart, use_container_width=True)
-            else:
-                st.info("Could not create topic bar chart")
-
-
-    def _render_company_involvement(instance):
-        """
-        Render company involvement in GTC sessions by topic.
-        Cloud providers are shown horizontally with companies on y-axis.
-        OEM companies are shown vertically.
-        
-        Args:
-            instance: The conference instance object
-        """
-        with DataManagerContext() as managers:
-            # Use the DataLoader utility to load session data
-            session_data = DataLoader.load_session_data(instance.instance_id)
-            
-            if not session_data:
-                st.info(f"No sessions found for {instance.conference_name} {instance.year}")
-                return
-            
-            # Create chart for cloud companies
-            cloud_data = CompanyMatcher.extract_company_topic_data(
-                session_data, 
-                CompanyMatcher.CLOUD_COMPANIES, 
-                CompanyMatcher.CLOUD_COMPANY_ALIASES
-            )
-            
-            if cloud_data:
-                # Create a horizontal bar chart for cloud providers with companies on y-axis
-                cloud_chart = CompanyVisualization.create_company_involvement_chart(
-                    cloud_data,
-                    CompanyMatcher.CLOUD_COMPANIES,
-                    "Cloud",
-                    instance.conference_name,
-                    instance.year,
-                    horizontal=True  # Use horizontal orientation with companies on y-axis
-                )
-                if cloud_chart:
-                    st.altair_chart(cloud_chart, use_container_width=True)
-                else:
-                    st.info("No data available for cloud companies")
-            else:
-                st.info("No data available for cloud companies")
-            
-            # Create chart for OEM companies
-            oem_data = CompanyMatcher.extract_company_topic_data(
-                session_data, 
-                CompanyMatcher.OEM_COMPANIES, 
-                CompanyMatcher.OEM_COMPANY_ALIASES
-            )
-            
-            if oem_data:
-                oem_chart = CompanyVisualization.create_company_involvement_chart(
-                    oem_data,
-                    CompanyMatcher.OEM_COMPANIES,
-                    "OEM",
-                    instance.conference_name,
-                    instance.year,
-                    horizontal=True
-                )
-                if oem_chart:
-                    st.altair_chart(oem_chart, use_container_width=True)
-                else:
-                    st.info("No data available for OEM companies")
-            else:
-                st.info("No data available for OEM companies")
