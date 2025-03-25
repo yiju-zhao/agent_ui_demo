@@ -1,9 +1,13 @@
 import streamlit as st
 import pandas as pd
-from typing import List, Dict, Any, Tuple, List, Callable
+from typing import List, Any, Tuple, List, Callable
 import plotly.express as px
 import plotly.graph_objects as go
+import altair as alt
 
+label_font_size = 16
+title_font_size = 18
+legend_font_size = 17
 
 class MetricsDisplay:
     """Handles display of metrics in a consistent format."""
@@ -368,3 +372,345 @@ class FilterDisplay:
     def show_keyword_search(keywords: List[str]) -> str:
         """Display keyword search/filter."""
         return st.text_input("Search Keywords", placeholder="Type to search...")
+
+class ConferenceVisualization:
+    """Handles visualization of conference data."""
+    
+    @staticmethod
+    def render_conference_header(instance, theme_color="#1f77b4"):
+        """Render a styled conference header."""
+        st.markdown(
+            f"""
+            <div style='padding: 10px; margin-bottom: 15px; background-color: #f8f9fa; 
+                border-radius: 5px; border-left: 5px solid {theme_color};'>
+                <div style='display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;'>
+                    <h3 style='margin: 0; color: {theme_color};'>{instance.conference_name} {instance.year}</h3>
+                    <div style='font-size: 0.9em;'>
+                        <span style='margin-right: 15px;'><strong>Date:</strong> {instance.start_date.strftime('%b %d')} - 
+                        {instance.end_date.strftime('%b %d, %Y')}</span>
+                        <span><strong>Location:</strong> {instance.location or "N/A"}</span>
+                    </div>
+                </div>
+                {f'<div style="font-size: 0.85em; margin-top: 5px;"><strong>Website:</strong> <a href="{instance.website}" target="_blank">{instance.website}</a></div>' 
+                if instance.website else ''}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    
+    @staticmethod
+    def apply_session_styles(theme_color="#1f77b4"):
+        """Apply CSS styles for session display."""
+        st.markdown(f"""
+            <style>
+            /* More compact session cards */
+            .session-card {{
+                padding: 8px;
+                margin-bottom: 8px;
+                border: 1px solid #e6e6e6;
+                border-radius: 5px;
+                background-color: #f8f9fa;
+            }}
+            .session-time {{
+                color: #666666;
+                font-size: 0.8em;
+            }}
+            .session-title {{
+                color: {theme_color};
+                font-weight: bold;
+                font-size: 0.95em;
+                margin: 3px 0;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }}
+            .session-track {{
+                display: inline-block;
+                padding: 1px 6px;
+                background-color: {theme_color}20;
+                color: {theme_color};
+                border-radius: 10px;
+                font-size: 0.75em;
+            }}
+            </style>
+        """, unsafe_allow_html=True)
+    
+    @staticmethod
+    def render_session_card(session):
+        """Render a session card with consistent styling."""
+        st.markdown(f"""
+            <div class="session-card">
+                <div class="session-time">{session['session_code']}</div>
+                <div class="session-title" title="{session['title']}">{session['title']}</div>
+                <div class="session-track">{session['track']}</div>
+            </div>
+        """, unsafe_allow_html=True)
+    
+    @staticmethod
+    def render_session_details(session, theme_color="#1f77b4"):
+        """Render detailed session information."""
+        st.markdown(f"""
+            <div style="padding: 12px; border: 1px solid #e6e6e6; border-radius: 5px; background-color: #f8f9fa;">
+                <h4 style="color: {theme_color}; margin: 0 0 10px 0; font-size: 1.1em;">{session['title']}</h4>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; font-size: 0.9em;">
+                    <div><strong>Time:</strong> {session['time']}</div>
+                    <div><strong>Location:</strong> {session['location']}</div>
+                    <div><strong>Track:</strong> {session['track']}</div>
+                    <div><strong>Code:</strong> {session.get('session_code', 'N/A')}</div>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.9em;">
+                    <div style="flex: 1;"><strong>Level:</strong> {session.get('technical_level', 'N/A')}</div>
+                </div>
+                <div style="margin-top: 8px; font-size: 0.9em;">
+                    <strong>Speaker(s):</strong> {session['speaker']}
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+    
+    @staticmethod
+    def render_trend_charts(data, title="Trend Analysis"):
+        """Render trend charts for conference data."""
+        yearly_fig = go.Figure()
+        
+        # Add papers trend
+        yearly_fig.add_trace(
+            go.Scatter(
+                x=data["years"],
+                y=data["paper_counts"],
+                name="Papers",
+                mode="lines+markers",
+                line=dict(color="blue", width=2),
+            )
+        )
+        
+        # Add conferences trend on secondary y-axis if available
+        if "conference_counts" in data:
+            yearly_fig.add_trace(
+                go.Scatter(
+                    x=data["years"],
+                    y=data["conference_counts"],
+                    name="Conferences",
+                    mode="lines+markers",
+                    line=dict(color="red", width=2),
+                    yaxis="y2",
+                )
+            )
+            
+            yearly_fig.update_layout(
+                yaxis2=dict(title="Number of Conferences", overlaying="y", side="right"),
+            )
+
+        yearly_fig.update_layout(
+            title=title,
+            xaxis=dict(title="Year"),
+            yaxis=dict(title="Number of Papers"),
+            hovermode="x unified",
+            showlegend=True,
+            legend=dict(
+                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+            ),
+        )
+        
+        st.plotly_chart(yearly_fig, use_container_width=True)
+
+class CompanyVisualization:
+    """Handles visualization of company data."""
+    
+    @staticmethod
+    def create_company_involvement_chart(company_topic_data, company_list, title_prefix, instance_name, instance_year, horizontal=False, label_threshold=2):
+        """
+        Create a simplified stacked bar chart showing company involvement by topic with count labels on each segment.
+        For a horizontal chart, a total session label is displayed at the end of each bar.
+        
+        Args:
+            company_topic_data: List of dictionaries with company, topic, and count information.
+            company_list: List of standardized company names to include.
+            title_prefix: Prefix for the chart title.
+            instance_name: Name of the conference instance.
+            instance_year: Year of the conference instance.
+            horizontal: Whether to create a horizontal bar chart (default: False).
+            label_threshold: Minimum Count value required to display a label on a segment.
+            
+        Returns:
+            Altair chart object.
+        """
+        if not company_topic_data:
+            return None
+
+        # Convert to DataFrame and compute unique session counts per Company/Topic
+        df = pd.DataFrame(company_topic_data)
+        counts = (df.drop_duplicates(subset=["Company", "Topic", "Session_ID"])
+                    .groupby(["Company", "Topic"])
+                    .size()
+                    .reset_index(name="Count"))
+        
+        # Determine the top 10 topics by total count
+        top_topics = counts.groupby("Topic")["Count"].sum().nlargest(10).index.tolist()
+        counts = counts[counts["Topic"].isin(top_topics)]
+        
+        # Pivot the data so that rows are Companies and columns are topics
+        pivot_df = counts.pivot_table(index="Company", columns="Topic", values="Count", fill_value=0)
+        
+        # Reindex to include all companies and reset the index
+        pivot_df = pivot_df.reindex(company_list, fill_value=0).reset_index()
+        
+        # Compute total sessions per company
+        pivot_df["total_sessions"] = pivot_df[top_topics].sum(axis=1)
+        pivot_df = pivot_df[pivot_df["total_sessions"] > 0]  # filter out companies with zero sessions
+        
+        # Melt the pivot table (include total_sessions for later aggregation)
+        melted_df = pd.melt(pivot_df, id_vars=["Company", "total_sessions"], value_vars=top_topics,
+                            var_name="Topic", value_name="Count")
+        
+        # Base chart with window transform for cumulative sums and midpoints
+        base = alt.Chart(melted_df).transform_window(
+            cumulative_sum='sum(Count)',
+            sort=[{'field': 'Count', 'order': 'descending'},
+                {'field': 'Topic', 'order': 'ascending'}],
+            groupby=['Company']
+        ).transform_calculate(
+            mid='datum.cumulative_sum - datum.Count/2',
+            label=f"(datum.Count >= {label_threshold}) ? datum.Count : ''"
+        )
+        
+        if horizontal:
+            bar = base.mark_bar().encode(
+                y=alt.Y('Company:N', title='', sort=company_list, axis=alt.Axis(labelLimit=120)),
+                x=alt.X('sum(Count):Q', title='Number of Sessions', axis=alt.Axis(labels=False)),
+                color=alt.Color('Topic:N', scale=alt.Scale(scheme='tableau10'),
+                                legend=alt.Legend(title="", orient="right")),
+                order=alt.Order('Count:Q', sort='descending'),
+                tooltip=['Company', 'Topic', alt.Tooltip('Count:Q', format='.0f')]
+            )
+            
+            text = base.mark_text(align='center', baseline='middle', color='white', fontSize=14).encode(
+                y=alt.Y('Company:N', sort=company_list),
+                x=alt.X('mid:Q'),
+                text=alt.Text('label:N')
+            )
+            
+            # Aggregate total sessions per company using the melted data
+            total_text = alt.Chart(melted_df).transform_aggregate(
+                total='max(total_sessions)',
+                groupby=['Company']
+            ).mark_text(align='left', baseline='middle', dx=3, fontSize=16).encode(
+                y=alt.Y('Company:N', sort=company_list),
+                x=alt.X('total:Q'),
+                text=alt.Text('total:Q', format='.0f')
+            )
+            
+            chart = (bar + text + total_text).properties(
+                title=f"{title_prefix} Companies' Involvement by Topic at {instance_name} {instance_year}",
+                height=400
+            )
+        else:
+            # Vertical chart version (if needed)
+            bar = base.mark_bar().encode(
+                x=alt.X('Company:N', sort=company_list, axis=alt.Axis(labelAngle=0, labelLimit=120)),
+                y=alt.Y('sum(Count):Q', title='Number of Sessions', axis=alt.Axis(labels=False)),
+                color=alt.Color('Topic:N', scale=alt.Scale(scheme='tableau10'),
+                                legend=alt.Legend(title="", orient="right")),
+                order=alt.Order('Count:Q', sort='descending'),
+                tooltip=['Company', 'Topic', alt.Tooltip('Count:Q', format='.0f')]
+            )
+            
+            text = base.mark_text(align='center', baseline='middle', color='white', fontSize=14).encode(
+                x=alt.X('Company:N', sort=company_list),
+                y=alt.Y('mid:Q'),
+                text=alt.Text('label:N')
+            )
+            
+            total_text = alt.Chart(melted_df).transform_aggregate(
+                total='max(total_sessions)',
+                groupby=['Company']
+            ).mark_text(align='center', baseline='bottom', dy=-3, fontSize=16).encode(
+                x=alt.X('Company:N', sort=company_list),
+                y=alt.Y('total:Q'),
+                text=alt.Text('total:Q', format='.0f')
+            )
+            
+            chart = (bar + text + total_text).properties(
+                title=f"{title_prefix} Companies' Involvement by Topic at {instance_name} {instance_year}",
+                height=500
+            )
+        
+        return chart.configure_view(stroke=None)\
+                    .configure_axis(labelFontSize=16, titleFontSize=18, grid=False)\
+                    .configure_legend(labelFontSize=18, titleFontSize=18, padding=10, cornerRadius=5,
+                                    orient='right', labelLimit=300, titleLimit=200)\
+                    .configure_title(fontSize=18, font='Arial', anchor='start', color='black')
+
+
+
+
+class TopicVisualization:
+    """Handles visualization of topic data."""
+    
+    @staticmethod
+    def create_topic_bar_chart(topic_data, conference_name, year, limit=20):
+        """
+        Create a bar chart showing topic counts.
+        
+        Args:
+            topic_data: Dictionary mapping topics to their counts
+            conference_name: Name of the conference
+            year: Year of the conference
+            limit: Maximum number of topics to display
+            
+        Returns:
+            Altair chart object
+        """
+        if not topic_data:
+            return None
+            
+        # Sort topics by count
+        sorted_topics = sorted(topic_data.items(), key=lambda x: x[1], reverse=True)
+        
+        # Create dataframe for visualization
+        topic_df = pd.DataFrame(sorted_topics, columns=["Topic", "Count"])
+        
+        # Limit to top N topics for better visualization
+        if len(topic_df) > limit:
+            display_df = topic_df.head(limit)
+        else:
+            display_df = topic_df
+        
+        # For the topic count bar chart
+        base = alt.Chart(display_df).encode(
+            y=alt.Y('Topic:N', sort='-x', title='', axis=alt.Axis(labelLimit=300)),
+            x=alt.X('Count:Q', title='Number of Sessions', axis=alt.Axis(labels=False))
+        )
+
+        # Create the bars
+        bars = base.mark_bar().encode(
+            color=alt.Color('Count:Q', 
+                        scale=alt.Scale(scheme='blues'),
+                        legend=None),
+            tooltip=['Topic', 'Count']
+        )
+
+        # Create the text labels at the end of the bars
+        text = base.mark_text(
+            align='left',     # Align text to the left (start of text is at the end of the bar)
+            baseline='middle', # Center text vertically
+            dx=3,              # Small horizontal offset from the end of the bar
+            fontSize=16 
+        ).encode(
+            text='Count:Q'    # Use the Count field for the text
+        )
+
+        # Combine the bars and text
+        chart = (bars + text).properties(
+            title=f"Top Topics at {conference_name} {year}",
+            height=600
+        ).configure_axis(
+            labelFontSize=16,
+            titleFontSize=18
+        ).configure_title(
+            fontSize=18,
+            font='Arial',
+            anchor='start',
+            color='black'
+        )
+        
+        return chart
