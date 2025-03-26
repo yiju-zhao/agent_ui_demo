@@ -7,7 +7,7 @@ class SessionFilterHandler:
     
     @staticmethod
     @cache_data(ttl=3600)  # Cache for 1 hour
-    def apply_filters(sessions, track, time, venue, company):
+    def apply_filters(sessions, track, time, venue, company, has_expert_opinion=False):
         """
         Filter sessions based on selected criteria.
         
@@ -17,6 +17,7 @@ class SessionFilterHandler:
             time (str): Selected time filter
             venue (str): Selected venue filter
             company (str): Selected company filter
+            has_expert_opinion (bool): Filter for sessions with expert opinions
             
         Returns:
             list: Filtered list of sessions
@@ -45,6 +46,15 @@ class SessionFilterHandler:
             filtered_sessions = [
                 session for session in filtered_sessions
                 if company in session["speaker_companies"]
+            ]
+            
+        if has_expert_opinion:
+            filtered_sessions = [
+                session for session in filtered_sessions
+                if session.get("expert_opinion") and 
+                   isinstance(session["expert_opinion"], str) and 
+                   session["expert_opinion"].strip() and 
+                   session["expert_opinion"].lower() != "nan"
             ]
             
         return filtered_sessions
@@ -85,7 +95,7 @@ class SessionFilterHandler:
             tab_idx (int): Current tab index
             
         Returns:
-            tuple: Selected filter values (track, time, venue, company)
+            tuple: Selected filter values (track, time, venue, company, has_expert_opinion)
         """
         with st.expander("Filter Sessions", expanded=False):
             filter_cols = st.columns(4)
@@ -117,5 +127,11 @@ class SessionFilterHandler:
                     options=["All Companies"] + filter_options["companies"],
                     key=f"company_filter_{tab_idx}"
                 )
+            
+            # Add checkbox for expert opinion filter
+            has_expert_opinion = st.checkbox(
+                "Show only sessions with expert opinions",
+                key=f"expert_opinion_filter_{tab_idx}"
+            )
                 
-        return selected_track, selected_time, selected_venue, selected_company
+        return selected_track, selected_time, selected_venue, selected_company, has_expert_opinion
