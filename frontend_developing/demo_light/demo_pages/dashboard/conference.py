@@ -674,7 +674,7 @@ class Conference:
                 "OEM",
                 instance.conference_name,
                 instance.year,
-                horizontal=True
+                horizontal=False
             )
             if oem_chart:
                 st.altair_chart(oem_chart, use_container_width=True)
@@ -709,7 +709,7 @@ class Conference:
         day_filter_options = filter_options[tab_idx]
 
         # Filter UI using the SessionFilterHandler
-        selected_track, selected_time, selected_venue, selected_company = SessionFilterHandler.render_filter_ui(
+        selected_track, selected_time, selected_venue, selected_company, has_expert_opinion = SessionFilterHandler.render_filter_ui(
             day_filter_options, tab_idx
         )
 
@@ -719,7 +719,8 @@ class Conference:
             selected_track,
             selected_time,
             selected_venue,
-            selected_company
+            selected_company,
+            has_expert_opinion
         )
 
         # Session list and details columns
