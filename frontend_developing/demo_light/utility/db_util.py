@@ -224,6 +224,7 @@ class DataLoader:
                             "full_topic": session.topic,
                             "points": session.points if session.points and session.points != 'nan' else "",
                             "expert_opinion": session.expert_view if session.expert_view and session.expert_view != 'nan' else "",
+                            "ai_analysis": session.ai_analysis if session.ai_analysis and session.ai_analysis != 'nan' else "",
                         }
                         session_by_date[date_str].append(formatted_session)
 

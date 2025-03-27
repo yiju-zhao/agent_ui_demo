@@ -795,12 +795,12 @@ class Conference:
                         st.markdown('</div>', unsafe_allow_html=True)
 
                 # AI Interpretation
-                if selected_session.get('ai_interpretation') and selected_session['ai_interpretation'] != 'nan':
-                    ai_interpretation = selected_session['ai_interpretation']
-                    if isinstance(ai_interpretation, str) and ai_interpretation.strip():
+                if selected_session.get('ai_analysis') and selected_session['ai_analysis'] != 'nan':
+                    ai_analysis = selected_session['ai_analysis']
+                    if isinstance(ai_analysis, str) and ai_analysis.strip():
                         st.markdown('<div class="ai-interpretation-expander">', unsafe_allow_html=True)
                         with st.expander("🤖 AI解读"):
-                            interpretation_list = [p.strip() for p in ai_interpretation.split('\n') if p.strip()]
+                            interpretation_list = [p.strip() for p in ai_analysis.split('\n') if p.strip()]
                             for interpretation in interpretation_list:
                                 st.markdown(interpretation)
                         st.markdown('</div>', unsafe_allow_html=True)
